@@ -8,7 +8,7 @@ async function createOrganizationForExistingUsers() {
     // Buscar todos os usuários
     const users = await prisma.user.findMany({
         include: {
-            memberships: true,
+            organizations: true,
         },
     });
 
@@ -16,7 +16,7 @@ async function createOrganizationForExistingUsers() {
 
     for (const user of users) {
         // Verificar se usuário já tem organização
-        if (user.memberships.length > 0) {
+        if (user.organizations.length > 0) {
             console.log(`✓ ${user.email} já tem organização`);
             continue;
         }
