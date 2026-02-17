@@ -29,6 +29,8 @@ async function getActiveOrganizationId(userId: string): Promise<string | null> {
         const newOrg = await prisma.organization.create({
             data: {
                 name: orgName,
+                slug: `${user.email.split("@")[0]}-${Date.now()}`,
+                isPersonal: true,
                 members: {
                     create: {
                         userId: userId,
