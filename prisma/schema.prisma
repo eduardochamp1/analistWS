@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// AUTH MODELS
+// ============================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  password      String    // Hashed
+  role          String    @default("VIEWER") // ADMIN, SUPERVISOR, TECHNICIAN, VIEWER
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  teams         Team[]
+  emergencies   Emergency[]
+  accounts      Account[]
+  sessions      Session[]
+  organizations OrganizationMember[]
+}
+
+model Organization {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  isPersonal  Boolean   @default(false) // True se for organização pessoal do usuário
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  members     OrganizationMember[]
+  teams       Team[]
+  emergencies Emergency[]
+}
+
+model OrganizationMember {
+  id             String       @id @default(cuid())
+  userId         String
+  organizationId String
+  role           String       @default("MEMBER") // OWNER, ADMIN, MEMBER, VIEWER
+  createdAt      DateTime     @default(now())
+  
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, organizationId])
+  @@index([userId])
+  @@index([organizationId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============================================================================
+// BUSINESS MODELS
+// ============================================================================
+
+model Team {
+  id        String   @id @default(cuid())
+  name      String
+  lat       Float
+  lon       Float
+  color     String
+  members   Int      @default(3)
+  status    String   @default("AVAILABLE") // AVAILABLE, IN_SERVICE, OFFLINE, PAUSED
+  notes     String?
+  
+  userId         String
+  organizationId String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([organizationId])
+  @@index([status])
+}
+
+model Emergency {
+  id             String   @id @default(cuid())
+  name           String
+  lat            Float
+  lon            Float
+  severity       String   @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  status         String   @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED, CANCELLED
+  description    String?
+  selectedTeamId String?
+  
+  userId         String
+  organizationId String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  createdAt      DateTime @default(now())
+  resolvedAt     DateTime?
+  updatedAt      DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([organizationId])
+  @@index([status])
+  @@index([severity])
+}

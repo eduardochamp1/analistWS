@@ -1,65 +1,111 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import Link from "next/link";
+import { CloudSun, Route, Users, Zap, ArrowRight } from "lucide-react";
+import { EngelmigLogo } from "@/components/engelmig-logo";
+import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
+
+const features = [
+  {
+    title: "Previsao do Tempo",
+    description: "Consulte a previsao meteorologica atualizada para cidades do ES e capitais do Brasil.",
+    icon: CloudSun,
+    href: "/weather",
+    color: "bg-amber-50 text-amber-600",
+  },
+  {
+    title: "Rotas",
+    description: "Calcule rotas entre dois pontos com distancia e tempo estimado de deslocamento.",
+    icon: Route,
+    href: "/routes",
+    color: "bg-primary-light text-primary",
+  },
+  {
+    title: "Gestao de Equipes",
+    description: "Gerencie equipes em campo, localize no mapa e identifique a mais proxima em emergencias.",
+    icon: Users,
+    href: "/teams",
+    color: "bg-red-50 text-red-600",
+  },
+];
+
+export default function DashboardPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const [teamCount, setTeamCount] = useState(0);
+
+  // Proteção: redirecionar para login se não autenticado
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/login");
+    }
+  }, [status, router]);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("analist-ws-teams");
+      if (stored) {
+        const teams = JSON.parse(stored);
+        setTeamCount(Array.isArray(teams) ? teams.length : 0);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div>
+      <div className="mb-8 flex items-center gap-4">
+        <EngelmigLogo size={48} />
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">
+            Engelmig Energia
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-sm text-muted">
+            Plataforma de gestao de equipes em campo
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </div>
+
+      {teamCount > 0 && (
+        <div className="mb-8 flex gap-4">
+          <div className="flex items-center gap-3 rounded-xl border border-card-border bg-card-bg px-5 py-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-light">
+              <Users size={20} className="text-primary" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-foreground">{teamCount}</p>
+              <p className="text-xs text-muted">equipe{teamCount !== 1 ? "s" : ""} cadastrada{teamCount !== 1 ? "s" : ""}</p>
+            </div>
+          </div>
         </div>
-      </main>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {features.map((feature) => {
+          const Icon = feature.icon;
+          return (
+            <Link
+              key={feature.href}
+              href={feature.href}
+              className="group rounded-xl border border-card-border bg-card-bg p-6 transition-all hover:border-primary/30 hover:shadow-md"
+            >
+              <div className={`mb-4 flex h-12 w-12 items-center justify-center rounded-lg ${feature.color}`}>
+                <Icon size={24} />
+              </div>
+              <h3 className="mb-1 text-base font-semibold text-foreground">
+                {feature.title}
+              </h3>
+              <p className="mb-4 text-sm text-muted leading-relaxed">
+                {feature.description}
+              </p>
+              <span className="inline-flex items-center gap-1 text-sm font-medium text-primary transition-colors group-hover:text-primary-hover">
+                Acessar <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
+              </span>
+            </Link>
+          );
+        })}
+      </div>
     </div>
   );
 }
