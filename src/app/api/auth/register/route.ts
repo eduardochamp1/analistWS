@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma, Prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma"; // Instância local
+import { Prisma } from "@prisma/client"; // Tipo oficial (para capturar erros de banco)
 import bcrypt from "bcryptjs";
 
 export async function POST(request: NextRequest) {

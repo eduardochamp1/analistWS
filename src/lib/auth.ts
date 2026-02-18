@@ -1,7 +1,10 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
-import { prisma } from "@/lib/prisma";
+// No arquivo src/lib/auth.ts
+import prisma from "@/lib/prisma"; // Tente SEM as chaves {}
+// OU, se você adicionou o export nomeado:
+//import { prisma } from "@/lib/prisma"
 import bcrypt from "bcryptjs";
 
 export const authOptions: NextAuthOptions = {
