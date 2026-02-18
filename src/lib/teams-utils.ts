@@ -4,7 +4,9 @@ export interface Team {
   lat: number;
   lon: number;
   color: string;
-  members?: number;
+  members: number;
+  available?: boolean;
+  status?: string;
 }
 
 export interface EmergencyPoint {

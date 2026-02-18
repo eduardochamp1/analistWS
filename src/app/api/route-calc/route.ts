@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Usar POST para poder configurar radiuses (tolerancia de snap para estrada)
+    // POST permite configurar radiuses (tolerancia de snap para estrada mais proxima)
     const res = await fetch(
       `${BASE_URL}/v2/directions/driving-car/geojson`,
       {
@@ -66,13 +66,20 @@ export async function GET(request: NextRequest) {
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => null);
+      const message =
+        errorData?.error?.message ||
+        errorData?.error ||
+        `Erro HTTP ${res.status}`;
       return NextResponse.json(
-        { error: errorData?.error?.message || `Erro HTTP ${res.status}` },
+        { error: message },
         { status: res.status }
       );
     }
 
     const data = await res.json();
+
+    // POST /geojson retorna FeatureCollection com summary em properties
+    // Normalizar para o mesmo formato que o frontend espera
     return NextResponse.json(data);
   } catch {
     return NextResponse.json(

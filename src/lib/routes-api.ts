@@ -13,7 +13,8 @@ export interface GeocodingResult {
 
 interface GeoJSONFeature {
   properties: {
-    segments: { distance: number; duration: number }[];
+    summary?: { distance: number; duration: number };
+    segments?: { distance: number; duration: number }[];
     name?: string;
     label?: string;
   };
@@ -51,7 +52,22 @@ export async function fetchRoute(
 
     const data = await res.json();
     const feature: GeoJSONFeature = data.features[0];
-    const segment = feature.properties.segments[0];
+
+    // POST /geojson retorna summary no topo + segments detalhados
+    // GET retorna apenas segments. Suportar ambos os formatos.
+    let distanceMeters: number;
+    let durationSeconds: number;
+
+    if (feature.properties.summary) {
+      distanceMeters = feature.properties.summary.distance;
+      durationSeconds = feature.properties.summary.duration;
+    } else if (feature.properties.segments && feature.properties.segments.length > 0) {
+      distanceMeters = feature.properties.segments[0].distance;
+      durationSeconds = feature.properties.segments[0].duration;
+    } else {
+      throw new Error("Resposta da API de rotas em formato inesperado.");
+    }
+
     const coords = feature.geometry.coordinates;
 
     // OpenRouteService retorna [lon, lat], converter para [lat, lon] para Leaflet
@@ -60,8 +76,8 @@ export async function fetchRoute(
     );
 
     return {
-      distance: Math.round((segment.distance / 1000) * 10) / 10,
-      duration: Math.round(segment.duration / 60),
+      distance: Math.round((distanceMeters / 1000) * 10) / 10,
+      duration: Math.round(durationSeconds / 60),
       geometry,
     };
   } catch (err: unknown) {
