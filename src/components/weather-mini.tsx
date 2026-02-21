@@ -41,47 +41,111 @@ function translateCondition(desc: string): string {
   return conditionMap[desc.toLowerCase()] || desc;
 }
 
+function cacheKey(lat: number, lon: number): string {
+  return `${lat.toFixed(3)},${lon.toFixed(3)}`;
+}
+
+// Module-level cache — survives component remounts and re-renders
+const weatherCache = new Map<string, WeatherMiniData | "error">();
+// In-flight deduplication — prevents multiple fetches for the same coordinates
+const inflight = new Map<string, Promise<WeatherMiniData | "error">>();
+
+async function fetchWeather(lat: number, lon: number): Promise<WeatherMiniData | "error"> {
+  const key = cacheKey(lat, lon);
+
+  // Return cached result immediately
+  if (weatherCache.has(key)) return weatherCache.get(key)!;
+
+  // Deduplicate concurrent requests for the same coordinates
+  if (inflight.has(key)) return inflight.get(key)!;
+
+  const promise = fetch(`/api/weather?lat=${lat}&lon=${lon}`)
+    .then((r) => {
+      if (!r.ok) return Promise.reject("not-ok");
+      return r.json();
+    })
+    .then((json: { current?: { main?: { temp: number; humidity: number }; weather?: { description: string; icon: string }[]; wind?: { speed: number } } }) => {
+      const c = json?.current;
+      if (!c?.main || !c?.weather?.[0] || !c?.wind) return "error" as const;
+      const result: WeatherMiniData = {
+        temp: Math.round(c.main.temp),
+        description: translateCondition(c.weather[0].description),
+        humidity: c.main.humidity,
+        wind_speed: Math.round(c.wind.speed * 3.6),
+        icon: c.weather[0].icon,
+      };
+      weatherCache.set(key, result);
+      return result;
+    })
+    .catch(() => {
+      weatherCache.set(key, "error");
+      return "error" as const;
+    })
+    .finally(() => {
+      inflight.delete(key);
+    });
+
+  inflight.set(key, promise);
+  return promise;
+}
+
 export function WeatherMini({ lat, lon, label }: WeatherMiniProps) {
-  const [data, setData] = useState<WeatherMiniData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const prevKey = useRef<string>("");
+  const key = cacheKey(lat, lon);
+  const cached = weatherCache.get(key);
+
+  // Initialize state from cache — no loading flash if already cached
+  const [data, setData] = useState<WeatherMiniData | null>(
+    cached && cached !== "error" ? cached : null
+  );
+  const [loading, setLoading] = useState(cached === undefined);
+  const [hasError, setHasError] = useState(cached === "error");
+
+  // Use ref instead of cancelled flag so it doesn't interfere with shared inflight promise
+  const mountedRef = useRef(true);
+  const fetchedKey = useRef<string>("");
 
   useEffect(() => {
-    const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
-    if (key === prevKey.current) return;
-    prevKey.current = key;
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
-    let cancelled = false;
+  useEffect(() => {
+    const key = cacheKey(lat, lon);
+
+    // Skip if coordinates haven't changed
+    if (key === fetchedKey.current) return;
+    fetchedKey.current = key;
+
+    // Check cache first — no fetch needed
+    const cached = weatherCache.get(key);
+    if (cached !== undefined) {
+      if (cached === "error") {
+        setHasError(true);
+        setLoading(false);
+        setData(null);
+      } else {
+        setData(cached);
+        setHasError(false);
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Not cached — fetch (deduplicated via inflight map)
     setLoading(true);
-    setError(null);
-    setData(null);
+    setHasError(false);
 
-    fetch(`/api/weather?lat=${lat}&lon=${lon}`)
-      .then((r) => {
-        if (!r.ok) return r.json().then((e: { error?: string }) => Promise.reject(e.error || "Erro"));
-        return r.json();
-      })
-      .then((json: { current: { main: { temp: number; humidity: number }; weather: { description: string; icon: string }[]; wind: { speed: number } } }) => {
-        if (cancelled) return;
-        const c = json.current;
-        setData({
-          temp: Math.round(c.main.temp),
-          description: translateCondition(c.weather[0].description),
-          humidity: c.main.humidity,
-          wind_speed: Math.round(c.wind.speed * 3.6),
-          icon: c.weather[0].icon,
-        });
-      })
-      .catch((err: string) => {
-        if (cancelled) return;
-        setError(typeof err === "string" ? err : "Erro ao buscar clima");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => { cancelled = true; };
+    fetchWeather(lat, lon).then((result) => {
+      if (!mountedRef.current) return;
+      if (result === "error") {
+        setHasError(true);
+        setData(null);
+      } else {
+        setData(result);
+        setHasError(false);
+      }
+      setLoading(false);
+    });
   }, [lat, lon]);
 
   if (loading) {
@@ -93,8 +157,7 @@ export function WeatherMini({ lat, lon, label }: WeatherMiniProps) {
     );
   }
 
-  if (error || !data) {
-    // Silently show unavailable (API key might not be set)
+  if (hasError || !data) {
     return (
       <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-100 bg-amber-50/40 px-3 py-2">
         <AlertTriangle size={12} className="shrink-0 text-amber-500" />

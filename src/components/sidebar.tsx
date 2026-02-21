@@ -2,9 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CloudSun, Users, Menu, X, LayoutDashboard, BarChart2, ChevronLeft, ChevronRight, Moon, Sun } from "lucide-react";
+import {
+  CloudSun, Users, Menu, X, LayoutDashboard, BarChart2,
+  ChevronLeft, ChevronRight, Moon, Sun,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { EngelmigLogoFull, EngelmigLogo } from "./engelmig-logo";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { useDarkMode } from "@/contexts/DarkModeContext";
@@ -19,12 +22,33 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const { collapsed, toggle } = useSidebar();
   const { dark, toggle: toggleDark } = useDarkMode();
 
+  // Detect mobile breakpoint (md = 768px)
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const handler = (e: MediaQueryListEvent) => {
+      setIsMobile(e.matches);
+      if (!e.matches) setMobileOpen(false); // close drawer when going to desktop
+    };
+    setIsMobile(mq.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
+  // Close mobile drawer when route changes
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  // No mobile, sidebar never collapses — always shows full width when open
+  const isCollapsed = isMobile ? false : collapsed;
+
   return (
     <>
-      {/* Botão mobile */}
+      {/* ── Botão hamburger — visível só no mobile ── */}
       <button
         onClick={() => setMobileOpen(true)}
         className="fixed top-4 left-4 z-50 rounded-lg bg-sidebar-bg p-2 text-white md:hidden shadow-lg"
@@ -33,7 +57,7 @@ export function Sidebar() {
         <Menu size={20} />
       </button>
 
-      {/* Backdrop mobile */}
+      {/* ── Backdrop mobile ── */}
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 md:hidden"
@@ -41,33 +65,37 @@ export function Sidebar() {
         />
       )}
 
-      {/* Sidebar */}
+      {/* ── Sidebar ── */}
       <aside
         className={cn(
-          "fixed left-0 top-0 z-50 flex h-screen flex-col bg-sidebar-bg text-sidebar-text transition-all duration-300 md:translate-x-0",
-          // largura: 64px colapsado, 256px expandido
-          collapsed ? "w-16" : "w-64",
-          // mobile: desliza para fora quando fechado
-          mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+          "fixed left-0 top-0 z-50 flex h-screen flex-col bg-sidebar-bg text-sidebar-text transition-all duration-300",
+          // Largura: 64px colapsado (desktop only), 256px expandido
+          isCollapsed ? "w-16" : "w-64",
+          // Mobile: desliza para fora quando fechado
+          // Desktop: sempre visível (translate-x-0)
+          isMobile
+            ? mobileOpen ? "translate-x-0" : "-translate-x-full"
+            : "translate-x-0"
         )}
       >
         {/* Header */}
-        <div className={cn(
-          "flex items-center border-b border-white/10 py-4",
-          collapsed ? "justify-center px-0" : "justify-between px-5"
-        )}>
-          {/* Logo: completo quando expandido, ícone quando colapsado */}
-          {collapsed ? (
+        <div
+          className={cn(
+            "flex items-center border-b border-white/10 py-4",
+            isCollapsed ? "justify-center px-0" : "justify-between px-5"
+          )}
+        >
+          {isCollapsed ? (
             <EngelmigLogo size={28} />
           ) : (
             <EngelmigLogoFull />
           )}
 
-          {/* Botão fechar no mobile */}
-          {!collapsed && (
+          {/* Botão fechar — mobile */}
+          {!isCollapsed && isMobile && (
             <button
               onClick={() => setMobileOpen(false)}
-              className="text-sidebar-text md:hidden"
+              className="text-sidebar-text"
               aria-label="Fechar menu"
             >
               <X size={20} />
@@ -76,48 +104,53 @@ export function Sidebar() {
         </div>
 
         {/* Nav */}
-        <nav className="mt-4 flex-1 px-2" aria-label="Menu principal">
+        <nav className="mt-4 flex-1 px-2 overflow-y-auto" aria-label="Menu principal">
           {navItems.map((item) => {
-            const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+            const isActive =
+              item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             const Icon = item.icon;
 
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={() => setMobileOpen(false)}
-                title={collapsed ? item.label : undefined}
+                title={isCollapsed ? item.label : undefined}
                 className={cn(
                   "mb-1 flex items-center rounded-lg px-3 py-2.5 text-sm transition-colors",
-                  collapsed ? "justify-center gap-0" : "gap-3",
+                  isCollapsed ? "justify-center gap-0" : "gap-3",
                   isActive
                     ? "bg-accent text-sidebar-bg font-semibold"
                     : "hover:bg-white/10"
                 )}
               >
                 <Icon size={18} className="shrink-0" />
-                {!collapsed && <span>{item.label}</span>}
+                {!isCollapsed && <span>{item.label}</span>}
               </Link>
             );
           })}
         </nav>
 
-        {/* Rodapé + botão retrair (apenas desktop) */}
-        <div className={cn(
-          "mt-auto border-t border-white/10",
-          collapsed ? "px-2 py-3" : "px-4 py-3"
-        )}>
-          {/* Botão retrair/expandir — visível só em desktop */}
+        {/* Rodapé */}
+        <div
+          className={cn(
+            "mt-auto border-t border-white/10",
+            isCollapsed ? "px-2 py-3" : "px-4 py-3"
+          )}
+        >
+          {/* Botão retrair/expandir — desktop only */}
           <button
             onClick={toggle}
             className={cn(
-              "hidden md:flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs text-sidebar-text/60 transition-colors hover:bg-white/10 hover:text-sidebar-text",
-              collapsed ? "justify-center" : ""
+              "hidden md:flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs",
+              "text-sidebar-text/60 transition-colors hover:bg-white/10 hover:text-sidebar-text",
+              isCollapsed ? "justify-center" : ""
             )}
-            aria-label={collapsed ? "Expandir menu" : "Retrair menu"}
-            title={collapsed ? "Expandir menu" : "Retrair menu"}
+            aria-label={isCollapsed ? "Expandir menu" : "Retrair menu"}
+            title={isCollapsed ? "Expandir menu" : "Retrair menu"}
           >
-            {collapsed ? <ChevronRight size={16} /> : (
+            {isCollapsed ? (
+              <ChevronRight size={16} />
+            ) : (
               <>
                 <ChevronLeft size={16} />
                 <span>Retrair menu</span>
@@ -129,17 +162,18 @@ export function Sidebar() {
           <button
             onClick={toggleDark}
             className={cn(
-              "mt-1 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs text-sidebar-text/60 transition-colors hover:bg-white/10 hover:text-sidebar-text",
-              collapsed ? "justify-center" : ""
+              "mt-1 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs",
+              "text-sidebar-text/60 transition-colors hover:bg-white/10 hover:text-sidebar-text",
+              isCollapsed ? "justify-center" : ""
             )}
             aria-label={dark ? "Ativar modo claro" : "Ativar modo escuro"}
             title={dark ? "Modo claro" : "Modo escuro"}
           >
             {dark ? <Sun size={16} /> : <Moon size={16} />}
-            {!collapsed && <span>{dark ? "Modo claro" : "Modo escuro"}</span>}
+            {!isCollapsed && <span>{dark ? "Modo claro" : "Modo escuro"}</span>}
           </button>
 
-          {!collapsed && (
+          {!isCollapsed && (
             <p className="mt-1 px-2 text-xs text-sidebar-text/40">
               Engelmig Energia v1.0
             </p>

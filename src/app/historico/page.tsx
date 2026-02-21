@@ -26,9 +26,16 @@ interface EmergencyRecord {
   status: string;
   description: string | null;
   selectedTeamId: string | null;
+  resolvedByTeamId: string | null;
   createdAt: string;
   resolvedAt: string | null;
   updatedAt: string;
+}
+
+interface TeamInfo {
+  id: string;
+  name: string;
+  color: string;
 }
 
 const SEVERITY_LABELS: Record<string, string> = {
@@ -89,6 +96,7 @@ function calcDuration(createdAt: string, resolvedAt: string | null): string {
 
 export default function HistoricoPage() {
   const [records, setRecords] = useState<EmergencyRecord[]>([]);
+  const [teams, setTeams] = useState<TeamInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
   const [filterSeverity, setFilterSeverity] = useState<string>("ALL");
@@ -99,10 +107,17 @@ export default function HistoricoPage() {
   const fetchRecords = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/emergencies");
-      if (!res.ok) throw new Error("Erro ao buscar histórico");
-      const data = await res.json();
+      const [emRes, teamsRes] = await Promise.all([
+        fetch("/api/emergencies"),
+        fetch("/api/teams"),
+      ]);
+      if (!emRes.ok) throw new Error("Erro ao buscar histórico");
+      const data = await emRes.json();
       setRecords(data);
+      if (teamsRes.ok) {
+        const teamsData = await teamsRes.json();
+        setTeams(teamsData.map((t: TeamInfo) => ({ id: t.id, name: t.name, color: t.color })));
+      }
     } catch {
       errorToast("Erro ao carregar histórico de emergências");
     } finally {
@@ -304,7 +319,37 @@ export default function HistoricoPage() {
                     {record.description && (
                       <p className="mt-1 text-sm text-muted">{record.description}</p>
                     )}
-                    <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted">
+                    {/* Equipes */}
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      {record.selectedTeamId && (() => {
+                        const t = teams.find((t) => t.id === record.selectedTeamId);
+                        return t ? (
+                          <span className="flex items-center gap-1 text-xs text-muted">
+                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: t.color }} />
+                            Atendida por: <strong className="text-foreground">{t.name}</strong>
+                          </span>
+                        ) : null;
+                      })()}
+                      {record.resolvedByTeamId && record.resolvedByTeamId !== record.selectedTeamId && (() => {
+                        const t = teams.find((t) => t.id === record.resolvedByTeamId);
+                        return t ? (
+                          <span className="flex items-center gap-1 text-xs text-muted">
+                            <span className="h-2 w-2 rounded-full bg-green-500" />
+                            Concluída por: <strong className="text-green-700">{t.name}</strong>
+                          </span>
+                        ) : null;
+                      })()}
+                      {record.resolvedByTeamId && record.resolvedByTeamId === record.selectedTeamId && (() => {
+                        const t = teams.find((t) => t.id === record.resolvedByTeamId);
+                        return t ? (
+                          <span className="flex items-center gap-1 text-xs text-muted">
+                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: t.color }} />
+                            Atendida e concluída por: <strong className="text-foreground">{t.name}</strong>
+                          </span>
+                        ) : null;
+                      })()}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-3 text-xs text-muted">
                       <span>📅 Aberta: {formatDate(record.createdAt)}</span>
                       {record.resolvedAt && (
                         <span>✅ Resolvida: {formatDate(record.resolvedAt)}</span>

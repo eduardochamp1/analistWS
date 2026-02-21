@@ -14,17 +14,27 @@ const SidebarContext = createContext<SidebarContextValue>({
   toggle: () => {},
 });
 
+function applyCollapsed(v: boolean) {
+  if (v) {
+    document.documentElement.setAttribute("data-sidebar-collapsed", "true");
+  } else {
+    document.documentElement.removeAttribute("data-sidebar-collapsed");
+  }
+}
+
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
-  // Persiste preferência no localStorage
   const [collapsed, setCollapsedState] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem("sidebar-collapsed");
-    if (stored === "true") setCollapsedState(true);
+    const v = stored === "true";
+    setCollapsedState(v);
+    applyCollapsed(v);
   }, []);
 
   function setCollapsed(v: boolean) {
     setCollapsedState(v);
+    applyCollapsed(v);
     localStorage.setItem("sidebar-collapsed", String(v));
   }
 

@@ -118,14 +118,15 @@ model Team {
 }
 
 model Emergency {
-  id             String   @id @default(cuid())
-  name           String
-  lat            Float
-  lon            Float
-  severity       String   @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
-  status         String   @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED, CANCELLED
-  description    String?
-  selectedTeamId String?
+  id                String   @id @default(cuid())
+  name              String
+  lat               Float
+  lon               Float
+  severity          String   @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  status            String   @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED, CANCELLED
+  description       String?
+  selectedTeamId    String?
+  resolvedByTeamId  String?  // Equipe que efetivamente concluiu
 
   userId         String?
   organizationId String?

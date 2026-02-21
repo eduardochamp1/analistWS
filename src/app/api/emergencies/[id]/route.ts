@@ -8,15 +8,17 @@ export async function PATCH(
     try {
         const { id } = await params;
         const body = await request.json();
-        const { status, severity, description, selectedTeamId, resolvedAt } = body;
+        const { name, status, severity, description, selectedTeamId, resolvedByTeamId, resolvedAt } = body;
 
         const updated = await prisma.emergency.update({
             where: { id },
             data: {
+                ...(name !== undefined && { name }),
                 ...(status !== undefined && { status }),
                 ...(severity !== undefined && { severity }),
                 ...(description !== undefined && { description }),
                 ...(selectedTeamId !== undefined && { selectedTeamId }),
+                ...(resolvedByTeamId !== undefined && { resolvedByTeamId }),
                 ...(resolvedAt !== undefined && { resolvedAt: resolvedAt ? new Date(resolvedAt) : null }),
             },
         });

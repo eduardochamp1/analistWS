@@ -58,3 +58,22 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
+
+/* ---- Sidebar responsive offset ---- */
+:root {
+  --sidebar-w: 256px; /* expanded */
+}
+:root[data-sidebar-collapsed="true"] {
+  --sidebar-w: 64px;  /* collapsed */
+}
+
+/* main content shifts only on md+ screens */
+.main-content {
+  transition: padding-left 0.3s ease;
+  padding-left: 0; /* mobile: no offset, sidebar slides over content */
+}
+@media (min-width: 768px) {
+  .main-content {
+    padding-left: var(--sidebar-w);
+  }
+}
