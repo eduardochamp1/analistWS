@@ -55,7 +55,9 @@ export function WeatherCard({
       <div className="p-5">
         <h3 className="text-lg font-semibold text-foreground">
           {cityName}
-          <span className="ml-1 text-sm font-normal text-muted">{state}</span>
+          {state !== "Coords" && (
+            <span className="ml-1 text-sm font-normal text-muted">{state}</span>
+          )}
         </h3>
 
         {loading && (

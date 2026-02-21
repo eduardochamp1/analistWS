@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CloudSun, Route, Users, Menu, X, LayoutDashboard } from "lucide-react";
+import { CloudSun, Users, Menu, X, LayoutDashboard, BarChart2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
-import UserMenu from "./user-menu";
 import { EngelmigLogoFull } from "./engelmig-logo";
 
 const navItems = [
@@ -20,14 +19,14 @@ const navItems = [
     icon: CloudSun,
   },
   {
-    label: "Rotas",
-    href: "/routes",
-    icon: Route,
+    label: "Gestão de Equipes",
+    href: "/gestao",
+    icon: Users,
   },
   {
-    label: "Gestao de Equipes",
-    href: "/teams",
-    icon: Users,
+    label: "BI's Engelmig",
+    href: "/bi",
+    icon: BarChart2,
   },
 ];
 
@@ -97,12 +96,7 @@ export function Sidebar() {
           })}
         </nav>
 
-        {/* User Menu at Bottom */}
-        <div className="mt-auto pt-4 border-t border-white/10">
-          <UserMenu />
-        </div>
-
-        <div className="border-t border-white/10 px-6 py-4 text-xs text-sidebar-text/50">
+        <div className="mt-auto border-t border-white/10 px-6 py-4 text-xs text-sidebar-text/50">
           Engelmig Energia v1.0
         </div>
       </aside>

@@ -1,11 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { CloudSun, Route, Users, Zap, ArrowRight } from "lucide-react";
+import { CloudSun, Users, ArrowRight, BarChart2 } from "lucide-react";
 import { EngelmigLogo } from "@/components/engelmig-logo";
 import { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
 
 const features = [
   {
@@ -16,32 +14,58 @@ const features = [
     color: "bg-amber-50 text-amber-600",
   },
   {
-    title: "Rotas",
-    description: "Calcule rotas entre dois pontos com distancia e tempo estimado de deslocamento.",
-    icon: Route,
-    href: "/routes",
-    color: "bg-primary-light text-primary",
+    title: "Gestão de Equipes",
+    description: "Gerencie equipes, calcule rotas e identifique a equipe mais proxima em emergencias.",
+    icon: Users,
+    href: "/gestao",
+    color: "bg-red-50 text-red-600",
   },
   {
-    title: "Gestao de Equipes",
-    description: "Gerencie equipes em campo, localize no mapa e identifique a mais proxima em emergencias.",
-    icon: Users,
-    href: "/teams",
-    color: "bg-red-50 text-red-600",
+    title: "BI - Carteira ES",
+    description: "Indicadores e graficos interativos da carteira de contratos do Espirito Santo.",
+    icon: BarChart2,
+    href: "/bi",
+    color: "bg-violet-50 text-violet-600",
+  },
+  {
+    title: "BI - RH / Frota / Suprimentos",
+    description: "Painel gerencial de recursos humanos, gestao de frota e controle de suprimentos.",
+    icon: BarChart2,
+    href: "/bi?tab=rh-frota-suprimentos",
+    color: "bg-emerald-50 text-emerald-600",
+  },
+  {
+    title: "BI FROTA - Controle",
+    description: "Controle operacional da frota de veiculos e equipamentos.",
+    icon: BarChart2,
+    href: "/bi?tab=frota-controle",
+    color: "bg-orange-50 text-orange-600",
+  },
+  {
+    title: "BI FROTA - Producao Cessante",
+    description: "Acompanhamento de producao cessante e disponibilidade da frota.",
+    icon: BarChart2,
+    href: "/bi?tab=frota-producao-cessante",
+    color: "bg-rose-50 text-rose-600",
+  },
+  {
+    title: "BI - Relacao de UENs",
+    description: "Relacao e indicadores das Unidades de Execucao de Negocios.",
+    icon: BarChart2,
+    href: "/bi?tab=relacao-uens",
+    color: "bg-sky-50 text-sky-600",
+  },
+  {
+    title: "BI SUPRIMENTOS - Liberacoes",
+    description: "Evolucao de precos e gestao de estoque de suprimentos.",
+    icon: BarChart2,
+    href: "/bi?tab=suprimentos-liberacoes",
+    color: "bg-teal-50 text-teal-600",
   },
 ];
 
 export default function DashboardPage() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
   const [teamCount, setTeamCount] = useState(0);
-
-  // Proteção: redirecionar para login se não autenticado
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/login");
-    }
-  }, [status, router]);
 
   useEffect(() => {
     try {

@@ -103,15 +103,15 @@ model Team {
   members   Int      @default(3)
   status    String   @default("AVAILABLE") // AVAILABLE, IN_SERVICE, OFFLINE, PAUSED
   notes     String?
-  
-  userId         String
-  organizationId String
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  
+
+  userId         String?
+  organizationId String?
+  user           User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   @@index([userId])
   @@index([organizationId])
   @@index([status])
@@ -126,16 +126,16 @@ model Emergency {
   status         String   @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED, CANCELLED
   description    String?
   selectedTeamId String?
-  
-  userId         String
-  organizationId String
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  
+
+  userId         String?
+  organizationId String?
+  user           User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
   createdAt      DateTime @default(now())
   resolvedAt     DateTime?
   updatedAt      DateTime @updatedAt
-  
+
   @@index([userId])
   @@index([organizationId])
   @@index([status])

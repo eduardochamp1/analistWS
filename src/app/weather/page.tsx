@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import { CloudSun } from "lucide-react";
 import { CitySelector } from "@/components/city-selector";
 import { WeatherCard } from "@/components/weather-card";
@@ -34,17 +32,8 @@ function loadSavedCities(): City[] {
 }
 
 export default function WeatherPage() {
-  const { status } = useSession();
-  const router = useRouter();
   const [cityWeathers, setCityWeathers] = useState<CityWeather[]>([]);
   const addedKeysRef = useRef<Set<string>>(new Set());
-
-  // Proteção: redirecionar para login se não autenticado
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/login");
-    }
-  }, [status, router]);
 
   const fetchCityWeather = useCallback((city: City, key: string) => {
     fetchWeather(city.lat, city.lon, city.name, city.state)

@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
   Users,
@@ -53,8 +51,6 @@ export interface EmergencyDisplayData {
 }
 
 export default function TeamsPage() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
   const { success, warning } = useToast();
 
   // Hook useTeams substitui o estado local de times
@@ -76,13 +72,6 @@ export default function TeamsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-
-  // Proteção: redirecionar se não autenticado
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/login");
-    }
-  }, [status, router]);
 
   // Buscar rotas para uma emergencia
   const fetchRoutesForEmergency = useCallback(

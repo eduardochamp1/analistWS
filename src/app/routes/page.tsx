@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
   Route,
@@ -34,17 +32,8 @@ const RouteMap = dynamic(
 );
 
 export default function RoutesPage() {
-  const { status } = useSession();
-  const router = useRouter();
   const [start, setStart] = useState<LocationValue | null>(null);
   const [end, setEnd] = useState<LocationValue | null>(null);
-
-  // Proteção: redirecionar para login se não autenticado
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/login");
-    }
-  }, [status, router]);
   const [route, setRoute] = useState<RouteResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

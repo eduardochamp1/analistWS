@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "Emergency" ALTER COLUMN "userId" DROP NOT NULL,
+ALTER COLUMN "organizationId" DROP NOT NULL;
+
+-- AlterTable
+ALTER TABLE "Team" ALTER COLUMN "userId" DROP NOT NULL,
+ALTER COLUMN "organizationId" DROP NOT NULL;
