@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { Users, Route, Loader2 } from "lucide-react";
+import { Users, Route, History, Calendar, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Carrega as páginas existentes dinamicamente para evitar SSR de Leaflet
@@ -25,6 +25,24 @@ const RoutesPage = dynamic(() => import("@/app/routes/page"), {
   ),
 });
 
+const HistoricoPage = dynamic(() => import("@/app/historico/page"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-96 items-center justify-center">
+      <Loader2 size={32} className="animate-spin text-primary" />
+    </div>
+  ),
+});
+
+const DisponibilidadePage = dynamic(() => import("@/app/disponibilidade/page"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-96 items-center justify-center">
+      <Loader2 size={32} className="animate-spin text-primary" />
+    </div>
+  ),
+});
+
 const TABS = [
   {
     id: "emergencias",
@@ -35,6 +53,16 @@ const TABS = [
     id: "rotas",
     label: "Rotas",
     icon: Route,
+  },
+  {
+    id: "historico",
+    label: "Histórico",
+    icon: History,
+  },
+  {
+    id: "disponibilidade",
+    label: "Disponibilidade",
+    icon: Calendar,
   },
 ];
 
@@ -84,6 +112,8 @@ function GestaoContent() {
       {/* Conteúdo da aba ativa */}
       {activeId === "emergencias" && <TeamsPage />}
       {activeId === "rotas" && <RoutesPage />}
+      {activeId === "historico" && <HistoricoPage />}
+      {activeId === "disponibilidade" && <DisponibilidadePage />}
     </div>
   );
 }

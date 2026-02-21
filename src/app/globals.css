@@ -17,6 +17,23 @@
   --danger: #dc2626;
 }
 
+[data-theme="dark"] {
+  --background: #0f1117;
+  --foreground: #e8e8e8;
+  --sidebar-bg: #0a0d13;
+  --sidebar-text: #9ca3af;
+  --sidebar-active: #d4a017;
+  --card-bg: #1a1f2e;
+  --card-border: #2d3348;
+  --primary: #22c55e;
+  --primary-hover: #16a34a;
+  --primary-light: #052e16;
+  --accent: #d4a017;
+  --accent-hover: #b8890f;
+  --muted: #9ca3af;
+  --danger: #ef4444;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

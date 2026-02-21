@@ -1,10 +1,10 @@
 <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="32" height="32" rx="6" fill="#1a1a1a"/>
-  <path d="M18 3L9 16H15L12 29L24 14H17L21 3H18Z" fill="url(#g)"/>
-  <defs>
-    <linearGradient id="g" x1="12" y1="3" x2="18" y2="29" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#E8B800"/>
-      <stop offset="100%" stop-color="#DC2626"/>
-    </linearGradient>
-  </defs>
+  <!-- Fundo branco suave para o favicon -->
+  <rect width="32" height="32" rx="6" fill="#ffffff"/>
+  <!-- Sombra vermelha do raio (deslocada) -->
+  <path d="M20 2 L10.5 18 H16 L13 30 L26 13 H19.5 L23 2 Z" fill="#DC2626" transform="translate(1.5, 1.5)"/>
+  <!-- Sombra preta do raio (deslocada) -->
+  <path d="M20 2 L10.5 18 H16 L13 30 L26 13 H19.5 L23 2 Z" fill="#1a1a1a" transform="translate(0.8, 0.8)"/>
+  <!-- Raio principal amarelo -->
+  <path d="M20 2 L10.5 18 H16 L13 30 L26 13 H19.5 L23 2 Z" fill="#F5C800"/>
 </svg>

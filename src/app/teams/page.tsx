@@ -28,6 +28,7 @@ import { LocationSearch } from "@/components/location-search";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/contexts/ToastContext";
 import { useTeams, Team } from "@/hooks/useTeams";
+import { WeatherMini } from "@/components/weather-mini";
 
 const TeamsMap = dynamic(
   () => import("@/components/teams-map").then((mod) => mod.TeamsMap),
@@ -716,6 +717,9 @@ function EmergencyCard({
           <X size={16} />
         </button>
       </div>
+
+      {/* Clima no local da emergencia */}
+      <WeatherMini lat={emergency.lat} lon={emergency.lon} label="Clima no local" />
 
       {/* Ranking de equipes disponiveis */}
       {availableRanking.length === 0 ? (

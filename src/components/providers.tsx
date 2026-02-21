@@ -2,6 +2,7 @@
 
 import { ToastProvider } from "@/contexts/ToastContext";
 import { SidebarProvider, useSidebar } from "@/contexts/SidebarContext";
+import { DarkModeProvider } from "@/contexts/DarkModeContext";
 import { ToastContainer } from "@/components/toast-container";
 import { Sidebar } from "@/components/sidebar";
 
@@ -9,7 +10,7 @@ function Layout({ children }: { children: React.ReactNode }) {
     const { collapsed } = useSidebar();
 
     return (
-        <div className="flex min-h-screen bg-gray-50">
+        <div className="flex min-h-screen bg-background">
             <Sidebar />
             {/* Padding-left acompanha a largura da sidebar com transição suave */}
             <main
@@ -27,11 +28,13 @@ function Layout({ children }: { children: React.ReactNode }) {
 
 export function Providers({ children }: { children: React.ReactNode }) {
     return (
-        <SidebarProvider>
-            <ToastProvider>
-                <Layout>{children}</Layout>
-                <ToastContainer />
-            </ToastProvider>
-        </SidebarProvider>
+        <DarkModeProvider>
+            <SidebarProvider>
+                <ToastProvider>
+                    <Layout>{children}</Layout>
+                    <ToastContainer />
+                </ToastProvider>
+            </SidebarProvider>
+        </DarkModeProvider>
     );
 }

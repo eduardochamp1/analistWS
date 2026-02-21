@@ -86,7 +86,7 @@ export default function DashboardPage() {
             Engelmig Energia
           </h1>
           <p className="text-sm text-muted">
-            Plataforma de gestao de equipes em campo
+            Plataforma de Gestão
           </p>
         </div>
       </div>

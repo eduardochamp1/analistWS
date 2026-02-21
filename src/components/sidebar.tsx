@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CloudSun, Users, Menu, X, LayoutDashboard, BarChart2, ChevronLeft, ChevronRight } from "lucide-react";
+import { CloudSun, Users, Menu, X, LayoutDashboard, BarChart2, ChevronLeft, ChevronRight, Moon, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { EngelmigLogoFull, EngelmigLogo } from "./engelmig-logo";
 import { useSidebar } from "@/contexts/SidebarContext";
+import { useDarkMode } from "@/contexts/DarkModeContext";
 
 const navItems = [
   { label: "Inicio",            href: "/",       icon: LayoutDashboard },
@@ -19,6 +20,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { collapsed, toggle } = useSidebar();
+  const { dark, toggle: toggleDark } = useDarkMode();
 
   return (
     <>
@@ -121,6 +123,20 @@ export function Sidebar() {
                 <span>Retrair menu</span>
               </>
             )}
+          </button>
+
+          {/* Botão Dark Mode */}
+          <button
+            onClick={toggleDark}
+            className={cn(
+              "mt-1 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs text-sidebar-text/60 transition-colors hover:bg-white/10 hover:text-sidebar-text",
+              collapsed ? "justify-center" : ""
+            )}
+            aria-label={dark ? "Ativar modo claro" : "Ativar modo escuro"}
+            title={dark ? "Modo claro" : "Modo escuro"}
+          >
+            {dark ? <Sun size={16} /> : <Moon size={16} />}
+            {!collapsed && <span>{dark ? "Modo claro" : "Modo escuro"}</span>}
           </button>
 
           {!collapsed && (
