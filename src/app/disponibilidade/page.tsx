@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Calendar, Users, Plus, Trash2, ChevronLeft, ChevronRight, Save, Loader2 } from "lucide-react";
+import { Calendar, Users, Plus, Trash2, ChevronLeft, ChevronRight, Save, Loader2, X, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/contexts/ToastContext";
 import { useTeams } from "@/hooks/useTeams";
@@ -12,6 +12,8 @@ import { useTeams } from "@/hooks/useTeams";
 interface DaySchedule {
   teamIds: string[];
   note: string;
+  // Composição nomeada por equipe nesse dia (override da composição padrão)
+  compositions?: Record<string, string[]>; // teamId → nomes dos membros
 }
 
 type WeekSchedule = Record<string, DaySchedule>; // key: "YYYY-MM-DD"
@@ -25,7 +27,7 @@ const MONTH_LABELS = [
 function getMonday(date: Date): Date {
   const d = new Date(date);
   const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day; // Monday = start of week
+  const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
   d.setHours(0, 0, 0, 0);
   return d;
@@ -46,6 +48,7 @@ function todayKey(): string {
 }
 
 const STORAGE_KEY = "engelmig-availability-schedule";
+const MEMBERS_KEY = "engelmig-team-members";
 
 function loadSchedule(): WeekSchedule {
   try {
@@ -59,6 +62,22 @@ function saveSchedule(schedule: WeekSchedule) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(schedule));
 }
 
+function loadTeamMembers(): Record<string, string[]> {
+  try {
+    const s = localStorage.getItem(MEMBERS_KEY);
+    if (s) return JSON.parse(s) as Record<string, string[]>;
+  } catch { /* ignore */ }
+  return {};
+}
+
+// Verifica se a composição do dia difere da composição padrão
+function compositionChanged(dayComp: string[], defaultComp: string[]): boolean {
+  if (dayComp.length !== defaultComp.length) return true;
+  const sorted1 = [...dayComp].sort();
+  const sorted2 = [...defaultComp].sort();
+  return sorted1.some((v, i) => v !== sorted2[i]);
+}
+
 // ============================
 // Main Component
 // ============================
@@ -70,47 +89,62 @@ export default function DisponibilidadePage() {
   const [schedule, setSchedule] = useState<WeekSchedule>({});
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Membros padrão das equipes (carregados do localStorage compartilhado com Equipes)
+  const [defaultMembers, setDefaultMembers] = useState<Record<string, string[]>>({});
+  // Input de novo membro por equipe no dia
+  const [newMemberInputs, setNewMemberInputs] = useState<Record<string, string>>({});
 
-  // Load schedule from localStorage
   useEffect(() => {
     setSchedule(loadSchedule());
     setSelectedDay(todayKey());
   }, []);
 
+  // Recarrega membros padrão sempre que a aba fica visível
+  useEffect(() => {
+    const reload = () => setDefaultMembers(loadTeamMembers());
+    reload();
+    window.addEventListener("focus", reload);
+    return () => window.removeEventListener("focus", reload);
+  }, []);
+
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
-  function prevWeek() {
-    setWeekStart((d) => addDays(d, -7));
-  }
-  function nextWeek() {
-    setWeekStart((d) => addDays(d, 7));
-  }
-  function goToday() {
-    setWeekStart(getMonday(new Date()));
-    setSelectedDay(todayKey());
-  }
+  function prevWeek() { setWeekStart((d) => addDays(d, -7)); }
+  function nextWeek() { setWeekStart((d) => addDays(d, 7)); }
+  function goToday() { setWeekStart(getMonday(new Date())); setSelectedDay(todayKey()); }
 
   const getDaySchedule = useCallback(
-    (dateKey: string): DaySchedule => {
-      return schedule[dateKey] ?? { teamIds: [], note: "" };
-    },
+    (dateKey: string): DaySchedule => schedule[dateKey] ?? { teamIds: [], note: "" },
     [schedule]
   );
 
-  const toggleTeamOnDay = useCallback(
-    (dateKey: string, teamId: string) => {
-      setSchedule((prev) => {
-        const day = prev[dateKey] ?? { teamIds: [], note: "" };
-        const teamIds = day.teamIds.includes(teamId)
-          ? day.teamIds.filter((id) => id !== teamId)
-          : [...day.teamIds, teamId];
-        const updated = { ...prev, [dateKey]: { ...day, teamIds } };
-        saveSchedule(updated);
-        return updated;
-      });
-    },
-    []
-  );
+  const toggleTeamOnDay = useCallback((dateKey: string, teamId: string) => {
+    setSchedule((prev) => {
+      const day = prev[dateKey] ?? { teamIds: [], note: "" };
+      const isAdding = !day.teamIds.includes(teamId);
+      const teamIds = isAdding
+        ? [...day.teamIds, teamId]
+        : day.teamIds.filter((id) => id !== teamId);
+
+      // Ao adicionar equipe ao dia, pré-preenche composição com padrão
+      let compositions = day.compositions ?? {};
+      if (isAdding) {
+        const defaults = loadTeamMembers();
+        const defComp = defaults[teamId] ?? [];
+        if (defComp.length > 0) {
+          compositions = { ...compositions, [teamId]: [...defComp] };
+        }
+      } else {
+        // Remove composição ao desmarcar
+        const { [teamId]: _removed, ...rest } = compositions;
+        compositions = rest;
+      }
+
+      const updated = { ...prev, [dateKey]: { ...day, teamIds, compositions } };
+      saveSchedule(updated);
+      return updated;
+    });
+  }, []);
 
   const updateNote = useCallback((dateKey: string, note: string) => {
     setSchedule((prev) => {
@@ -130,6 +164,44 @@ export default function DisponibilidadePage() {
     });
   }, []);
 
+  // Gerencia composição por equipe no dia
+  const addMemberToDay = useCallback((dateKey: string, teamId: string) => {
+    const name = (newMemberInputs[`${dateKey}:${teamId}`] ?? "").trim();
+    if (!name) return;
+    setSchedule((prev) => {
+      const day = prev[dateKey] ?? { teamIds: [], note: "" };
+      const current = day.compositions?.[teamId] ?? [];
+      if (current.includes(name)) return prev;
+      const compositions = { ...(day.compositions ?? {}), [teamId]: [...current, name] };
+      const updated = { ...prev, [dateKey]: { ...day, compositions } };
+      saveSchedule(updated);
+      return updated;
+    });
+    setNewMemberInputs((prev) => ({ ...prev, [`${dateKey}:${teamId}`]: "" }));
+  }, [newMemberInputs]);
+
+  const removeMemberFromDay = useCallback((dateKey: string, teamId: string, name: string) => {
+    setSchedule((prev) => {
+      const day = prev[dateKey] ?? { teamIds: [], note: "" };
+      const current = day.compositions?.[teamId] ?? [];
+      const compositions = { ...(day.compositions ?? {}), [teamId]: current.filter((m) => m !== name) };
+      const updated = { ...prev, [dateKey]: { ...day, compositions } };
+      saveSchedule(updated);
+      return updated;
+    });
+  }, []);
+
+  const resetCompositionToDefault = useCallback((dateKey: string, teamId: string) => {
+    setSchedule((prev) => {
+      const day = prev[dateKey] ?? { teamIds: [], note: "" };
+      const defaults = loadTeamMembers();
+      const compositions = { ...(day.compositions ?? {}), [teamId]: [...(defaults[teamId] ?? [])] };
+      const updated = { ...prev, [dateKey]: { ...day, compositions } };
+      saveSchedule(updated);
+      return updated;
+    });
+  }, []);
+
   const handleSave = () => {
     setSaving(true);
     saveSchedule(schedule);
@@ -142,7 +214,6 @@ export default function DisponibilidadePage() {
   const today = todayKey();
   const selectedDaySchedule = selectedDay ? getDaySchedule(selectedDay) : null;
 
-  // Week label
   const weekLabel = (() => {
     const end = addDays(weekStart, 6);
     if (weekStart.getMonth() === end.getMonth()) {
@@ -174,32 +245,21 @@ export default function DisponibilidadePage() {
 
       {/* Navegação semana */}
       <div className="mb-4 flex items-center gap-3">
-        <button
-          onClick={prevWeek}
-          className="rounded-lg border border-card-border bg-card-bg p-2 text-muted transition-colors hover:text-foreground"
-          aria-label="Semana anterior"
-        >
+        <button onClick={prevWeek} className="rounded-lg border border-card-border bg-card-bg p-2 text-muted transition-colors hover:text-foreground" aria-label="Semana anterior">
           <ChevronLeft size={16} />
         </button>
         <div className="flex flex-1 items-center gap-3">
           <p className="font-medium text-foreground">{weekLabel}</p>
-          <button
-            onClick={goToday}
-            className="rounded-md border border-card-border bg-card-bg px-2 py-0.5 text-xs text-muted transition-colors hover:text-foreground"
-          >
+          <button onClick={goToday} className="rounded-md border border-card-border bg-card-bg px-2 py-0.5 text-xs text-muted transition-colors hover:text-foreground">
             Hoje
           </button>
         </div>
-        <button
-          onClick={nextWeek}
-          className="rounded-lg border border-card-border bg-card-bg p-2 text-muted transition-colors hover:text-foreground"
-          aria-label="Próxima semana"
-        >
+        <button onClick={nextWeek} className="rounded-lg border border-card-border bg-card-bg p-2 text-muted transition-colors hover:text-foreground" aria-label="Próxima semana">
           <ChevronRight size={16} />
         </button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+      <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
         {/* Calendário semanal */}
         <div className="rounded-xl border border-card-border bg-card-bg overflow-hidden">
           <div className="grid grid-cols-7">
@@ -209,6 +269,19 @@ export default function DisponibilidadePage() {
               const isToday = key === today;
               const isSelected = key === selectedDay;
               const teamCount = daySchedule.teamIds.length;
+
+              // Nomes dos membros escalados neste dia (para exibição na célula)
+              const cellMemberNames: string[] = [];
+              daySchedule.teamIds.forEach((tid) => {
+                const comp = daySchedule.compositions?.[tid];
+                if (comp && comp.length > 0) {
+                  comp.forEach((name) => {
+                    // Abreviar: "João Silva" → "João S."
+                    const parts = name.trim().split(" ");
+                    cellMemberNames.push(parts.length > 1 ? `${parts[0]} ${parts[1][0]}.` : parts[0]);
+                  });
+                }
+              });
 
               return (
                 <button
@@ -223,34 +296,36 @@ export default function DisponibilidadePage() {
                   <span className={cn("text-xs font-medium text-muted", isToday && "text-accent")}>
                     {DOW_LABELS[day.getDay()]}
                   </span>
-                  <span
-                    className={cn(
-                      "flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold",
-                      isToday ? "bg-accent text-white" : "text-foreground",
-                      isSelected && !isToday && "bg-primary text-white"
-                    )}
-                  >
+                  <span className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold",
+                    isToday ? "bg-accent text-white" : "text-foreground",
+                    isSelected && !isToday && "bg-primary text-white"
+                  )}>
                     {day.getDate()}
                   </span>
+
                   {teamCount > 0 ? (
-                    <div className="flex flex-wrap justify-center gap-0.5 mt-1">
-                      {teamsLoading ? (
-                        <span className="text-[10px] text-muted">{teamCount} eq.</span>
-                      ) : (
-                        daySchedule.teamIds.slice(0, 3).map((tid) => {
-                          const team = teams.find((t) => t.id === tid);
-                          return team ? (
-                            <span
-                              key={tid}
-                              className="h-2 w-2 rounded-full"
-                              style={{ backgroundColor: team.color }}
-                              title={team.name}
-                            />
-                          ) : null;
-                        })
-                      )}
-                      {teamCount > 3 && (
-                        <span className="text-[10px] text-muted">+{teamCount - 3}</span>
+                    <div className="w-full mt-1 space-y-0.5">
+                      {/* Dots coloridos das equipes */}
+                      <div className="flex flex-wrap justify-center gap-0.5">
+                        {teamsLoading ? (
+                          <span className="text-[10px] text-muted">{teamCount} eq.</span>
+                        ) : (
+                          daySchedule.teamIds.slice(0, 3).map((tid) => {
+                            const team = teams.find((t) => t.id === tid);
+                            return team ? (
+                              <span key={tid} className="h-2 w-2 rounded-full" style={{ backgroundColor: team.color }} title={team.name} />
+                            ) : null;
+                          })
+                        )}
+                        {teamCount > 3 && <span className="text-[10px] text-muted">+{teamCount - 3}</span>}
+                      </div>
+                      {/* Nomes abreviados dos membros */}
+                      {cellMemberNames.length > 0 && (
+                        <p className="text-center text-[9px] leading-tight text-muted/70 break-words">
+                          {cellMemberNames.slice(0, 4).join(", ")}
+                          {cellMemberNames.length > 4 && ` +${cellMemberNames.length - 4}`}
+                        </p>
                       )}
                     </div>
                   ) : (
@@ -268,10 +343,7 @@ export default function DisponibilidadePage() {
               <div className="flex flex-wrap gap-2">
                 {teams.map((team) => (
                   <div key={team.id} className="flex items-center gap-1">
-                    <span
-                      className="h-3 w-3 rounded-full"
-                      style={{ backgroundColor: team.color }}
-                    />
+                    <span className="h-3 w-3 rounded-full" style={{ backgroundColor: team.color }} />
                     <span className="text-xs text-muted">{team.name}</span>
                   </div>
                 ))}
@@ -287,33 +359,22 @@ export default function DisponibilidadePage() {
               <div>
                 <p className="font-semibold text-foreground">
                   {new Date(selectedDay + "T12:00:00").toLocaleDateString("pt-BR", {
-                    weekday: "long",
-                    day: "2-digit",
-                    month: "long",
+                    weekday: "long", day: "2-digit", month: "long",
                   })}
                 </p>
                 {selectedDay === today && (
-                  <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold text-accent">
-                    Hoje
-                  </span>
+                  <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold text-accent">Hoje</span>
                 )}
               </div>
-              {selectedDaySchedule &&
-                (selectedDaySchedule.teamIds.length > 0 || selectedDaySchedule.note) && (
-                  <button
-                    onClick={() => clearDay(selectedDay)}
-                    className="text-xs text-muted hover:text-red-500"
-                    title="Limpar dia"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
+              {selectedDaySchedule && (selectedDaySchedule.teamIds.length > 0 || selectedDaySchedule.note) && (
+                <button onClick={() => clearDay(selectedDay)} className="text-xs text-muted hover:text-red-500" title="Limpar dia">
+                  <Trash2 size={14} />
+                </button>
+              )}
             </div>
 
             {teamsLoading ? (
-              <div className="flex justify-center py-6">
-                <Loader2 size={24} className="animate-spin text-primary/40" />
-              </div>
+              <div className="flex justify-center py-6"><Loader2 size={24} className="animate-spin text-primary/40" /></div>
             ) : teams.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-6 text-center">
                 <Users size={24} className="text-muted/40" />
@@ -321,46 +382,97 @@ export default function DisponibilidadePage() {
               </div>
             ) : (
               <>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
-                  Equipes de plantão
-                </p>
-                <div className="space-y-2 mb-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Equipes de plantão</p>
+                <div className="space-y-3 mb-4">
                   {teams.map((team) => {
                     const onDuty = (selectedDaySchedule?.teamIds ?? []).includes(team.id);
+                    const dayComp = selectedDaySchedule?.compositions?.[team.id] ?? [];
+                    const defaultComp = defaultMembers[team.id] ?? [];
+                    const hasDefaultComp = defaultComp.length > 0;
+                    const changed = onDuty && hasDefaultComp && compositionChanged(dayComp, defaultComp);
+                    const inputKey = `${selectedDay}:${team.id}`;
+
                     return (
-                      <button
-                        key={team.id}
-                        onClick={() => toggleTeamOnDay(selectedDay, team.id)}
-                        className={cn(
-                          "flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all",
-                          onDuty
-                            ? "border-green-300 bg-green-50"
-                            : "border-card-border bg-background hover:border-primary/30"
-                        )}
-                      >
-                        <div
-                          className="h-4 w-4 shrink-0 rounded-full"
-                          style={{ backgroundColor: team.color }}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="truncate text-sm font-medium text-foreground">
-                            {team.name}
-                          </p>
-                          <p className="text-xs text-muted">
-                            {team.members} membro{(team.members || 0) !== 1 ? "s" : ""}
-                          </p>
-                        </div>
-                        <div
-                          className={cn(
-                            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors",
-                            onDuty
-                              ? "border-green-500 bg-green-500 text-white"
-                              : "border-card-border bg-card-bg text-transparent"
-                          )}
+                      <div key={team.id} className={cn(
+                        "rounded-lg border transition-all",
+                        onDuty ? "border-green-300 bg-green-50" : "border-card-border bg-background"
+                      )}>
+                        {/* Linha de toggle */}
+                        <button
+                          onClick={() => toggleTeamOnDay(selectedDay, team.id)}
+                          className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
                         >
-                          ✓
-                        </div>
-                      </button>
+                          <div className="h-4 w-4 shrink-0 rounded-full" style={{ backgroundColor: team.color }} />
+                          <div className="flex-1 min-w-0">
+                            <p className="truncate text-sm font-medium text-foreground">{team.name}</p>
+                          </div>
+                          {changed && (
+                            <span className="flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700" title="Composição diferente do padrão">
+                              <AlertTriangle size={9} /> Alterada
+                            </span>
+                          )}
+                          <div className={cn(
+                            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors",
+                            onDuty ? "border-green-500 bg-green-500 text-white" : "border-card-border bg-card-bg text-transparent"
+                          )}>✓</div>
+                        </button>
+
+                        {/* Composição do dia (visível quando de plantão) */}
+                        {onDuty && (
+                          <div className="border-t border-green-200 px-3 pb-3 pt-2">
+                            <div className="mb-1.5 flex items-center justify-between">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                                Composição neste dia
+                              </p>
+                              {changed && (
+                                <button
+                                  onClick={() => resetCompositionToDefault(selectedDay, team.id)}
+                                  className="text-[10px] text-primary hover:underline"
+                                >
+                                  Restaurar padrão
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Membros do dia */}
+                            {dayComp.length === 0 && !hasDefaultComp ? (
+                              <p className="mb-2 text-xs text-muted/60">Sem membros cadastrados — <a href="/gestao?tab=equipes" className="text-primary hover:underline">adicionar na aba Equipes</a></p>
+                            ) : dayComp.length === 0 ? (
+                              <p className="mb-2 text-xs text-muted/60">Composição não definida para este dia</p>
+                            ) : (
+                              <div className="mb-2 flex flex-wrap gap-1">
+                                {dayComp.map((name) => (
+                                  <span key={name} className="flex items-center gap-1 rounded-full border border-green-200 bg-white px-2 py-0.5 text-xs text-green-800">
+                                    {name}
+                                    <button onClick={() => removeMemberFromDay(selectedDay, team.id, name)} className="text-green-400 hover:text-red-500">
+                                      <X size={9} />
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Adicionar membro neste dia */}
+                            <div className="flex gap-1">
+                              <input
+                                type="text"
+                                value={newMemberInputs[inputKey] ?? ""}
+                                onChange={(e) => setNewMemberInputs((prev) => ({ ...prev, [inputKey]: e.target.value }))}
+                                onKeyDown={(e) => e.key === "Enter" && addMemberToDay(selectedDay, team.id)}
+                                placeholder="Adicionar membro..."
+                                className="flex-1 rounded-md border border-green-200 bg-white px-2 py-1 text-xs outline-none focus:border-primary"
+                              />
+                              <button
+                                onClick={() => addMemberToDay(selectedDay, team.id)}
+                                disabled={!(newMemberInputs[inputKey] ?? "").trim()}
+                                className="flex items-center gap-0.5 rounded-md bg-primary px-2 py-1 text-[10px] font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-40"
+                              >
+                                <Plus size={10} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
@@ -379,26 +491,21 @@ export default function DisponibilidadePage() {
                   />
                 </div>
 
-                {/* Resumo */}
+                {/* Resumo do dia */}
                 {selectedDaySchedule && selectedDaySchedule.teamIds.length > 0 && (
                   <div className="mt-3 rounded-lg bg-green-50 border border-green-100 p-3">
                     <p className="text-xs font-semibold text-green-700">
-                      {selectedDaySchedule.teamIds.length} equipe
-                      {selectedDaySchedule.teamIds.length !== 1 ? "s" : ""} de plantão
+                      {selectedDaySchedule.teamIds.length} equipe{selectedDaySchedule.teamIds.length !== 1 ? "s" : ""} de plantão
                     </p>
                     <div className="mt-1 flex flex-wrap gap-1">
                       {selectedDaySchedule.teamIds.map((tid) => {
                         const team = teams.find((t) => t.id === tid);
+                        const comp = selectedDaySchedule.compositions?.[tid] ?? [];
                         return team ? (
-                          <span
-                            key={tid}
-                            className="flex items-center gap-1 rounded-full bg-white border border-green-200 px-2 py-0.5 text-[10px] font-medium text-green-700"
-                          >
-                            <span
-                              className="h-2 w-2 rounded-full"
-                              style={{ backgroundColor: team.color }}
-                            />
+                          <span key={tid} className="flex items-center gap-1 rounded-full bg-white border border-green-200 px-2 py-0.5 text-[10px] font-medium text-green-700">
+                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: team.color }} />
                             {team.name}
+                            {comp.length > 0 && <span className="text-green-500">({comp.length})</span>}
                           </span>
                         ) : null;
                       })}
@@ -411,7 +518,7 @@ export default function DisponibilidadePage() {
         )}
       </div>
 
-      {/* Vista geral mensal — equipes mais escaladas */}
+      {/* Resumo da semana */}
       {!teamsLoading && teams.length > 0 && (
         <div className="mt-6 rounded-xl border border-card-border bg-card-bg p-4">
           <div className="mb-3 flex items-center gap-2">
@@ -424,25 +531,13 @@ export default function DisponibilidadePage() {
                 getDaySchedule(toKey(day)).teamIds.includes(team.id)
               ).length;
               return (
-                <div
-                  key={team.id}
-                  className="flex items-center gap-2 rounded-lg border border-card-border bg-background px-3 py-2"
-                >
-                  <div
-                    className="h-3 w-3 rounded-full"
-                    style={{ backgroundColor: team.color }}
-                  />
+                <div key={team.id} className="flex items-center gap-2 rounded-lg border border-card-border bg-background px-3 py-2">
+                  <div className="h-3 w-3 rounded-full" style={{ backgroundColor: team.color }} />
                   <span className="text-sm font-medium text-foreground">{team.name}</span>
-                  <span
-                    className={cn(
-                      "rounded-full px-1.5 py-0.5 text-[10px] font-bold",
-                      daysOnDuty === 0
-                        ? "bg-gray-100 text-muted"
-                        : daysOnDuty >= 5
-                        ? "bg-red-100 text-red-700"
-                        : "bg-green-100 text-green-700"
-                    )}
-                  >
+                  <span className={cn(
+                    "rounded-full px-1.5 py-0.5 text-[10px] font-bold",
+                    daysOnDuty === 0 ? "bg-gray-100 text-muted" : daysOnDuty >= 5 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
+                  )}>
                     {daysOnDuty}d
                   </span>
                 </div>

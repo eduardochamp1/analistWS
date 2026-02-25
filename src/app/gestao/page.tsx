@@ -3,10 +3,19 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { Users, Route, History, Calendar, Loader2 } from "lucide-react";
+import { Users, Route, History, Calendar, Loader2, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Carrega as páginas existentes dinamicamente para evitar SSR de Leaflet
+const EquipesPage = dynamic(() => import("@/app/equipes/page"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-96 items-center justify-center">
+      <Loader2 size={32} className="animate-spin text-primary" />
+    </div>
+  ),
+});
+
 const TeamsPage = dynamic(() => import("@/app/teams/page"), {
   ssr: false,
   loading: () => (
@@ -44,6 +53,11 @@ const DisponibilidadePage = dynamic(() => import("@/app/disponibilidade/page"), 
 });
 
 const TABS = [
+  {
+    id: "equipes",
+    label: "Equipes",
+    icon: UserPlus,
+  },
   {
     id: "emergencias",
     label: "Gestão de Emergências",
@@ -87,29 +101,32 @@ function GestaoContent() {
   return (
     <div>
       {/* Tabs */}
-      <div className="mb-6 flex gap-2 border-b border-card-border">
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = tab.id === activeId;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => handleTab(tab.id)}
-              className={cn(
-                "flex items-center gap-2 border-b-2 px-4 pb-3 text-sm font-medium transition-colors",
-                isActive
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted hover:text-foreground"
-              )}
-            >
-              <Icon size={16} />
-              {tab.label}
-            </button>
-          );
-        })}
+      <div className="mb-6 overflow-x-auto border-b border-card-border">
+        <div className="flex min-w-max gap-1">
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = tab.id === activeId;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => handleTab(tab.id)}
+                className={cn(
+                  "flex items-center gap-2 border-b-2 px-4 pb-3 text-sm font-medium whitespace-nowrap transition-colors",
+                  isActive
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted hover:text-foreground"
+                )}
+              >
+                <Icon size={16} />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Conteúdo da aba ativa */}
+      {activeId === "equipes" && <EquipesPage />}
       {activeId === "emergencias" && <TeamsPage />}
       {activeId === "rotas" && <RoutesPage />}
       {activeId === "historico" && <HistoricoPage />}

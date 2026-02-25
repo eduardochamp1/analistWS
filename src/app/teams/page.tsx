@@ -3,18 +3,17 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import {
-  Users, Plus, Trash2, AlertTriangle, X, Siren, Pencil, Ruler,
-  CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp,
+  Users, Plus, AlertTriangle, X, Siren, Pencil, Ruler,
+  CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, ArrowRight,
 } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import {
-  RankingEntry, teamColors, rankTeamsByDistance,
+  RankingEntry, rankTeamsByDistance,
 } from "@/lib/teams-utils";
 import { cn } from "@/lib/utils";
 import { fetchRoute } from "@/lib/routes-api";
 import { LocationSearch } from "@/components/location-search";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { useToast } from "@/contexts/ToastContext";
 import { useTeams, Team } from "@/hooks/useTeams";
 import { useEmergencies, EmergencyDB } from "@/hooks/useEmergencies";
 import { WeatherMini } from "@/components/weather-mini";
@@ -55,9 +54,7 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 export default function TeamsPage() {
-  const { warning } = useToast();
-
-  const { teams, loading: teamsLoading, createTeam, updateTeam, deleteTeam } = useTeams();
+  const { teams, loading: teamsLoading } = useTeams();
   const { emergencies: dbEmergencies, loading: emergenciesLoading, createEmergency, updateEmergency, removeEmergency } = useEmergencies();
 
   // Rankings calculados localmente (não persistem — só distâncias/rotas)
@@ -65,18 +62,11 @@ export default function TeamsPage() {
   // Rastreia pares (emergencyId:teamId) já buscados para evitar chamadas duplicadas
   const fetchedRoutes = useRef(new Set<string>());
 
-  const [clickMode, setClickMode] = useState<"team" | "emergency" | null>(null);
-  const [newTeamName, setNewTeamName] = useState("");
-  const [newTeamColor, setNewTeamColor] = useState(teamColors[0].value);
-  const [newTeamMembers, setNewTeamMembers] = useState("3");
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [clickMode, setClickMode] = useState<"emergency" | null>(null);
   const [showAddEmergency, setShowAddEmergency] = useState(false);
   const [newEmergencyName, setNewEmergencyName] = useState("");
   const [newSeverity, setNewSeverity] = useState("MEDIUM");
   const [newDescription, setNewDescription] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [removeEmergencyId, setRemoveEmergencyId] = useState<string | null>(null);
 
   const fetchRoutesForEmergency = useCallback(
@@ -190,27 +180,9 @@ export default function TeamsPage() {
     await updateEmergency(id, { status: "CANCELLED" });
   }, [updateEmergency]);
 
-  const addTeamAtLocation = useCallback(async (lat: number, lon: number) => {
-    if (!newTeamName.trim()) { warning("Digite um nome para a equipe"); return; }
-    await createTeam({ name: newTeamName.trim(), lat, lon, color: newTeamColor, members: parseInt(newTeamMembers) || 3, status: "AVAILABLE" });
-    setNewTeamName("");
-    setClickMode(null);
-    setShowAddForm(false);
-  }, [newTeamName, newTeamColor, newTeamMembers, createTeam, warning]);
-
   const handleMapClick = useCallback((lat: number, lon: number) => {
-    if (clickMode === "team") addTeamAtLocation(lat, lon);
-    else if (clickMode === "emergency") addEmergency(lat, lon, `Emergência (${lat.toFixed(4)}, ${lon.toFixed(4)})`);
-  }, [clickMode, addTeamAtLocation, addEmergency]);
-
-  const removeTeam = async (id: string) => { await deleteTeam(id); setDeleteConfirmId(null); };
-  const startEdit = (team: Team) => { setEditingId(team.id); setEditName(team.name); };
-  const confirmEdit = async () => {
-    if (editingId && editName.trim()) {
-      await updateTeam(editingId, { name: editName.trim() });
-      setEditingId(null); setEditName("");
-    }
-  };
+    if (clickMode === "emergency") addEmergency(lat, lon, `Emergência (${lat.toFixed(4)}, ${lon.toFixed(4)})`);
+  }, [clickMode, addEmergency]);
 
   const getTeamAssignment = useCallback((teamId: string) => {
     for (let i = 0; i < emergencies.length; i++) {
@@ -230,18 +202,10 @@ export default function TeamsPage() {
     return ids;
   }, [emergencies]);
 
-  const teamToDelete = teams.find((t) => t.id === deleteConfirmId);
   const emergencyToRemove = emergencies.find((e) => e.id === removeEmergencyId);
 
   return (
     <div>
-      <ConfirmDialog
-        open={!!deleteConfirmId} title="Excluir equipe"
-        message={`Tem certeza que deseja excluir a equipe "${teamToDelete?.name || ""}"?`}
-        confirmLabel="Excluir" variant="danger"
-        onConfirm={() => deleteConfirmId && removeTeam(deleteConfirmId)}
-        onCancel={() => setDeleteConfirmId(null)}
-      />
       <ConfirmDialog
         open={!!removeEmergencyId} title="Remover emergência"
         message={`Remover "${emergencyToRemove?.name || ""}" do mapa? O registro permanece no histórico.`}
@@ -261,91 +225,52 @@ export default function TeamsPage() {
       <div className="grid gap-6 lg:grid-cols-[400px_1fr]">
         <div className="space-y-4">
 
-          {/* Equipes */}
+          {/* Equipes (somente leitura — gerenciamento na aba Equipes) */}
           <div className="rounded-xl border border-card-border bg-card-bg p-5">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Equipes ({teams.length})</h3>
-              <button onClick={() => { setShowAddForm(!showAddForm); setClickMode(null); }}
-                className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-hover"
-                disabled={teamsLoading}
+              <a
+                href="/gestao?tab=equipes"
+                className="flex items-center gap-1 rounded-md border border-primary/30 px-2.5 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/5"
               >
-                <Plus size={14} /> Adicionar
-              </button>
+                Gerenciar <ArrowRight size={12} />
+              </a>
             </div>
-
-            {showAddForm && (
-              <div className="mb-4 rounded-lg border border-primary/20 bg-primary/5 p-3">
-                <input type="text" value={newTeamName} onChange={(e) => setNewTeamName(e.target.value)}
-                  placeholder="Nome da equipe..."
-                  className="mb-2 w-full rounded-md border border-card-border bg-card-bg px-3 py-2 text-sm outline-none focus:border-primary"
-                />
-                <div className="mb-2 flex items-center gap-2">
-                  <span className="text-xs text-muted">Cor:</span>
-                  <div className="flex gap-1">
-                    {teamColors.map((c) => (
-                      <button key={c.value} onClick={() => setNewTeamColor(c.value)}
-                        className={cn("h-6 w-6 rounded-full transition-transform", newTeamColor === c.value ? "scale-110 ring-2 ring-offset-1 ring-foreground" : "hover:scale-105")}
-                        style={{ backgroundColor: c.value }} title={c.name}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="text-xs text-muted">Membros:</span>
-                  <input type="number" value={newTeamMembers} onChange={(e) => setNewTeamMembers(e.target.value)}
-                    min="1" max="50" className="w-16 rounded-md border border-card-border bg-card-bg px-2 py-1 text-sm outline-none focus:border-primary"
-                  />
-                </div>
-                <p className="mb-1.5 text-xs font-medium text-muted">Posicionar por:</p>
-                <LocationSearch
-                  onSelect={(lat, lon) => addTeamAtLocation(lat, lon)}
-                  onMapClick={() => setClickMode(clickMode === "team" ? null : "team")}
-                  clickModeActive={clickMode === "team"}
-                  disabled={!newTeamName.trim()} mapLabel="Fixar no mapa"
-                />
-              </div>
-            )}
 
             {teamsLoading ? (
               <div className="flex justify-center py-4"><Loader2 size={24} className="animate-spin text-primary/50" /></div>
             ) : teams.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted/60">Nenhuma equipe cadastrada</p>
+              <div className="py-3 text-center">
+                <p className="text-sm text-muted/60">Nenhuma equipe cadastrada</p>
+                <a
+                  href="/gestao?tab=equipes"
+                  className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  Cadastrar equipes <ArrowRight size={11} />
+                </a>
+              </div>
             ) : (
               <div className="max-h-60 space-y-1.5 overflow-y-auto">
                 {teams.map((team) => {
                   const assignment = getTeamAssignment(team.id);
                   return (
                     <div key={team.id}
-                      className={cn("flex items-center gap-2 rounded-lg px-3 py-2 transition-colors",
+                      className={cn("flex items-center gap-2 rounded-lg px-3 py-2",
                         assignment ? "border border-green-200 bg-green-50" : "bg-background"
                       )}
                     >
                       <div className="h-4 w-4 shrink-0 rounded-full" style={{ backgroundColor: team.color }} />
                       <div className="min-w-0 flex-1">
-                        {editingId === team.id ? (
-                          <div className="flex gap-1">
-                            <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)}
-                              onKeyDown={(e) => e.key === "Enter" && confirmEdit()}
-                              className="flex-1 rounded border border-card-border px-1.5 py-0.5 text-xs outline-none focus:border-primary" autoFocus
-                            />
-                            <button onClick={confirmEdit} className="text-xs text-primary">OK</button>
-                          </div>
-                        ) : (
-                          <>
-                            <p className="truncate text-sm font-medium">
-                              {team.name}
-                              {assignment && (
-                                <span className="ml-1.5 rounded bg-green-100 px-1.5 py-0.5 text-xs text-green-700">
-                                  Atribuída #{assignment.emergencyIndex}
-                                </span>
-                              )}
-                            </p>
-                            <p className="text-xs text-muted">{team.members} membro{(team.members || 0) > 1 ? "s" : ""}</p>
-                          </>
-                        )}
+                        <p className="truncate text-sm font-medium">
+                          {team.name}
+                          {assignment && (
+                            <span className="ml-1.5 rounded bg-green-100 px-1.5 py-0.5 text-xs text-green-700">
+                              Atribuída #{assignment.emergencyIndex}
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-muted">{team.members} membro{(team.members || 0) > 1 ? "s" : ""}</p>
                       </div>
-                      <button onClick={() => startEdit(team)} className="shrink-0 p-1 text-muted hover:text-primary"><Pencil size={12} /></button>
-                      <button onClick={() => setDeleteConfirmId(team.id)} className="shrink-0 p-1 text-muted hover:text-red-500"><Trash2 size={14} /></button>
                     </div>
                   );
                 })}
@@ -462,7 +387,7 @@ export default function TeamsPage() {
         <div className="relative h-[500px] overflow-hidden rounded-xl border border-card-border lg:h-auto lg:min-h-[600px]">
           {clickMode && (
             <div className="absolute left-1/2 top-4 z-[1000] -translate-x-1/2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background shadow-lg">
-              {clickMode === "team" ? `Clique para posicionar "${newTeamName}"` : "Clique para definir o local da emergência"}
+              Clique para definir o local da emergência
             </div>
           )}
           <TeamsMap
