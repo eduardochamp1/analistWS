@@ -12,11 +12,17 @@ import { EngelmigLogoFull, EngelmigLogo } from "./engelmig-logo";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { useDarkMode } from "@/contexts/DarkModeContext";
 
-const navItems = [
-  { label: "Inicio",            href: "/",       icon: LayoutDashboard },
-  { label: "Previsao do Tempo", href: "/weather", icon: CloudSun },
-  { label: "CCM - Gestão de Equipes", href: "/gestao",  icon: Users },
-  { label: "BI's Engelmig",     href: "/bi",      icon: BarChart2 },
+type NavLink  = { type: "link";  label: string; href: string; icon: React.ElementType };
+type NavGroup = { type: "group"; label: string };
+type NavEntry = NavLink | NavGroup;
+
+const navItems: NavEntry[] = [
+  { type: "link",  label: "Inicio",                    href: "/",           icon: LayoutDashboard },
+  { type: "link",  label: "Previsao do Tempo",          href: "/weather",    icon: CloudSun },
+  { type: "group", label: "Gestão de Equipes" },
+  { type: "link",  label: "CCM - Gestão de Equipes",   href: "/gestao",     icon: Users },
+  { type: "link",  label: "STC - Gestão de Equipes",   href: "/gestao-stc", icon: Users },
+  { type: "link",  label: "BI's Engelmig",              href: "/bi",         icon: BarChart2 },
 ];
 
 export function Sidebar() {
@@ -105,7 +111,20 @@ export function Sidebar() {
 
         {/* Nav */}
         <nav className="mt-4 flex-1 px-2 overflow-y-auto" aria-label="Menu principal">
-          {navItems.map((item) => {
+          {navItems.map((item, idx) => {
+            if (item.type === "group") {
+              return !isCollapsed ? (
+                <p
+                  key={`group-${idx}`}
+                  className="mt-3 mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-sidebar-text/40"
+                >
+                  {item.label}
+                </p>
+              ) : (
+                <hr key={`group-${idx}`} className="my-2 border-white/10" />
+              );
+            }
+
             const isActive =
               item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             const Icon = item.icon;
