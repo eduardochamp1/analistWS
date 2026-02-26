@@ -15,7 +15,7 @@ import { useDarkMode } from "@/contexts/DarkModeContext";
 const navItems = [
   { label: "Inicio",            href: "/",       icon: LayoutDashboard },
   { label: "Previsao do Tempo", href: "/weather", icon: CloudSun },
-  { label: "Gestão de Equipes", href: "/gestao",  icon: Users },
+  { label: "CCM - Gestão de Equipes", href: "/gestao",  icon: Users },
   { label: "BI's Engelmig",     href: "/bi",      icon: BarChart2 },
 ];
 

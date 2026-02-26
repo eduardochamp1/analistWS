@@ -259,9 +259,12 @@ export default function DisponibilidadePage() {
         </button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
-        {/* Calendário semanal */}
+      <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+
+        {/* Card esquerdo: calendário + equipes de plantão */}
         <div className="rounded-xl border border-card-border bg-card-bg overflow-hidden">
+
+          {/* Grade de dias */}
           <div className="grid grid-cols-7">
             {weekDays.map((day) => {
               const key = toKey(day);
@@ -270,13 +273,11 @@ export default function DisponibilidadePage() {
               const isSelected = key === selectedDay;
               const teamCount = daySchedule.teamIds.length;
 
-              // Nomes dos membros escalados neste dia (para exibição na célula)
               const cellMemberNames: string[] = [];
               daySchedule.teamIds.forEach((tid) => {
                 const comp = daySchedule.compositions?.[tid];
                 if (comp && comp.length > 0) {
                   comp.forEach((name) => {
-                    // Abreviar: "João Silva" → "João S."
                     const parts = name.trim().split(" ");
                     cellMemberNames.push(parts.length > 1 ? `${parts[0]} ${parts[1][0]}.` : parts[0]);
                   });
@@ -303,10 +304,8 @@ export default function DisponibilidadePage() {
                   )}>
                     {day.getDate()}
                   </span>
-
                   {teamCount > 0 ? (
                     <div className="w-full mt-1 space-y-0.5">
-                      {/* Dots coloridos das equipes */}
                       <div className="flex flex-wrap justify-center gap-0.5">
                         {teamsLoading ? (
                           <span className="text-[10px] text-muted">{teamCount} eq.</span>
@@ -320,7 +319,6 @@ export default function DisponibilidadePage() {
                         )}
                         {teamCount > 3 && <span className="text-[10px] text-muted">+{teamCount - 3}</span>}
                       </div>
-                      {/* Nomes abreviados dos membros */}
                       {cellMemberNames.length > 0 && (
                         <p className="text-center text-[9px] leading-tight text-muted/70 break-words">
                           {cellMemberNames.slice(0, 4).join(", ")}
@@ -336,44 +334,11 @@ export default function DisponibilidadePage() {
             })}
           </div>
 
-          {/* Legenda de equipes */}
-          {!teamsLoading && teams.length > 0 && (
-            <div className="border-t border-card-border p-3">
-              <p className="mb-2 text-xs font-medium text-muted">Legenda de equipes:</p>
-              <div className="flex flex-wrap gap-2">
-                {teams.map((team) => (
-                  <div key={team.id} className="flex items-center gap-1">
-                    <span className="h-3 w-3 rounded-full" style={{ backgroundColor: team.color }} />
-                    <span className="text-xs text-muted">{team.name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Painel do dia selecionado */}
-        {selectedDay && (
-          <div className="rounded-xl border border-card-border bg-card-bg p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-foreground">
-                  {new Date(selectedDay + "T12:00:00").toLocaleDateString("pt-BR", {
-                    weekday: "long", day: "2-digit", month: "long",
-                  })}
-                </p>
-                {selectedDay === today && (
-                  <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold text-accent">Hoje</span>
-                )}
-              </div>
-              {selectedDaySchedule && (selectedDaySchedule.teamIds.length > 0 || selectedDaySchedule.note) && (
-                <button onClick={() => clearDay(selectedDay)} className="text-xs text-muted hover:text-red-500" title="Limpar dia">
-                  <Trash2 size={14} />
-                </button>
-              )}
-            </div>
-
-            {teamsLoading ? (
+          {/* Equipes de plantão — ocupa o espaço abaixo do calendário */}
+          <div className="border-t border-card-border p-4">
+            {!selectedDay ? (
+              <p className="py-6 text-center text-sm text-muted/50">Selecione um dia no calendário</p>
+            ) : teamsLoading ? (
               <div className="flex justify-center py-6"><Loader2 size={24} className="animate-spin text-primary/40" /></div>
             ) : teams.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-6 text-center">
@@ -382,8 +347,29 @@ export default function DisponibilidadePage() {
               </div>
             ) : (
               <>
+                {/* Header do dia selecionado */}
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold text-foreground">
+                      {new Date(selectedDay + "T12:00:00").toLocaleDateString("pt-BR", {
+                        weekday: "long", day: "2-digit", month: "long",
+                      })}
+                    </p>
+                    {selectedDay === today && (
+                      <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold text-accent">Hoje</span>
+                    )}
+                  </div>
+                  {selectedDaySchedule && (selectedDaySchedule.teamIds.length > 0 || selectedDaySchedule.note) && (
+                    <button onClick={() => clearDay(selectedDay)} className="text-xs text-muted hover:text-red-500" title="Limpar dia">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Equipes de plantão</p>
-                <div className="space-y-3 mb-4">
+
+                {/* Grade de equipes */}
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {teams.map((team) => {
                     const onDuty = (selectedDaySchedule?.teamIds ?? []).includes(team.id);
                     const dayComp = selectedDaySchedule?.compositions?.[team.id] ?? [];
@@ -397,10 +383,10 @@ export default function DisponibilidadePage() {
                         "rounded-lg border transition-all",
                         onDuty ? "border-green-300 bg-green-50" : "border-card-border bg-background"
                       )}>
-                        {/* Linha de toggle */}
+                        {/* Toggle */}
                         <button
                           onClick={() => toggleTeamOnDay(selectedDay, team.id)}
-                          className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
+                          className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
                         >
                           <div className="h-4 w-4 shrink-0 rounded-full" style={{ backgroundColor: team.color }} />
                           <div className="flex-1 min-w-0">
@@ -417,42 +403,31 @@ export default function DisponibilidadePage() {
                           )}>✓</div>
                         </button>
 
-                        {/* Composição do dia (visível quando de plantão) */}
+                        {/* Composição (visível quando de plantão) */}
                         {onDuty && (
                           <div className="border-t border-green-200 px-3 pb-3 pt-2">
                             <div className="mb-1.5 flex items-center justify-between">
-                              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                                Composição neste dia
-                              </p>
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Composição</p>
                               {changed && (
-                                <button
-                                  onClick={() => resetCompositionToDefault(selectedDay, team.id)}
-                                  className="text-[10px] text-primary hover:underline"
-                                >
+                                <button onClick={() => resetCompositionToDefault(selectedDay, team.id)} className="text-[10px] text-primary hover:underline">
                                   Restaurar padrão
                                 </button>
                               )}
                             </div>
-
-                            {/* Membros do dia */}
                             {dayComp.length === 0 && !hasDefaultComp ? (
-                              <p className="mb-2 text-xs text-muted/60">Sem membros cadastrados — <a href="/gestao?tab=equipes" className="text-primary hover:underline">adicionar na aba Equipes</a></p>
+                              <p className="mb-2 text-xs text-muted/60">Sem membros — <a href="/gestao?tab=equipes" className="text-primary hover:underline">adicionar na aba Equipes</a></p>
                             ) : dayComp.length === 0 ? (
-                              <p className="mb-2 text-xs text-muted/60">Composição não definida para este dia</p>
+                              <p className="mb-2 text-xs text-muted/60">Composição não definida</p>
                             ) : (
                               <div className="mb-2 flex flex-wrap gap-1">
                                 {dayComp.map((name) => (
                                   <span key={name} className="flex items-center gap-1 rounded-full border border-green-200 bg-white px-2 py-0.5 text-xs text-green-800">
                                     {name}
-                                    <button onClick={() => removeMemberFromDay(selectedDay, team.id, name)} className="text-green-400 hover:text-red-500">
-                                      <X size={9} />
-                                    </button>
+                                    <button onClick={() => removeMemberFromDay(selectedDay, team.id, name)} className="text-green-400 hover:text-red-500"><X size={9} /></button>
                                   </span>
                                 ))}
                               </div>
                             )}
-
-                            {/* Adicionar membro neste dia */}
                             <div className="flex gap-1">
                               <input
                                 type="text"
@@ -476,46 +451,66 @@ export default function DisponibilidadePage() {
                     );
                   })}
                 </div>
-
-                {/* Nota do dia */}
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
-                    Observações do dia
-                  </label>
-                  <textarea
-                    value={selectedDaySchedule?.note ?? ""}
-                    onChange={(e) => updateNote(selectedDay, e.target.value)}
-                    placeholder="Ex: Equipe de sobreaviso, feriado, manutenção..."
-                    rows={3}
-                    className="w-full rounded-lg border border-card-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted/50 focus:border-primary resize-none"
-                  />
-                </div>
-
-                {/* Resumo do dia */}
-                {selectedDaySchedule && selectedDaySchedule.teamIds.length > 0 && (
-                  <div className="mt-3 rounded-lg bg-green-50 border border-green-100 p-3">
-                    <p className="text-xs font-semibold text-green-700">
-                      {selectedDaySchedule.teamIds.length} equipe{selectedDaySchedule.teamIds.length !== 1 ? "s" : ""} de plantão
-                    </p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {selectedDaySchedule.teamIds.map((tid) => {
-                        const team = teams.find((t) => t.id === tid);
-                        const comp = selectedDaySchedule.compositions?.[tid] ?? [];
-                        return team ? (
-                          <span key={tid} className="flex items-center gap-1 rounded-full bg-white border border-green-200 px-2 py-0.5 text-[10px] font-medium text-green-700">
-                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: team.color }} />
-                            {team.name}
-                            {comp.length > 0 && <span className="text-green-500">({comp.length})</span>}
-                          </span>
-                        ) : null;
-                      })}
-                    </div>
-                  </div>
-                )}
               </>
             )}
           </div>
-        )}
+        </div>
+
+        {/* Coluna direita: legenda + notas do dia */}
+        <div className="flex flex-col gap-4">
+
+          {/* Legenda de equipes */}
+          {!teamsLoading && teams.length > 0 && (
+            <div className="rounded-xl border border-card-border bg-card-bg p-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Legenda de equipes</p>
+              <div className="flex flex-col gap-1.5">
+                {teams.map((team) => (
+                  <div key={team.id} className="flex items-center gap-2">
+                    <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: team.color }} />
+                    <span className="text-xs text-foreground">{team.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Notas + resumo do dia */}
+          {selectedDay && (
+            <div className="rounded-xl border border-card-border bg-card-bg p-4">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
+                Observações do dia
+              </label>
+              <textarea
+                value={selectedDaySchedule?.note ?? ""}
+                onChange={(e) => updateNote(selectedDay, e.target.value)}
+                placeholder="Ex: Equipe de sobreaviso, feriado, manutenção..."
+                rows={4}
+                className="w-full rounded-lg border border-card-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted/50 focus:border-primary resize-none"
+              />
+              {selectedDaySchedule && selectedDaySchedule.teamIds.length > 0 && (
+                <div className="mt-3 rounded-lg bg-green-50 border border-green-100 p-3">
+                  <p className="text-xs font-semibold text-green-700">
+                    {selectedDaySchedule.teamIds.length} equipe{selectedDaySchedule.teamIds.length !== 1 ? "s" : ""} de plantão
+                  </p>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {selectedDaySchedule.teamIds.map((tid) => {
+                      const team = teams.find((t) => t.id === tid);
+                      const comp = selectedDaySchedule.compositions?.[tid] ?? [];
+                      return team ? (
+                        <span key={tid} className="flex items-center gap-1 rounded-full bg-white border border-green-200 px-2 py-0.5 text-[10px] font-medium text-green-700">
+                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: team.color }} />
+                          {team.name}
+                          {comp.length > 0 && <span className="text-green-500">({comp.length})</span>}
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+        </div>
       </div>
 
       {/* Resumo da semana */}
