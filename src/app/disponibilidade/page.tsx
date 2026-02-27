@@ -49,6 +49,9 @@ function todayKey(): string {
 
 const STORAGE_KEY = "engelmig-availability-schedule";
 const MEMBERS_KEY = "engelmig-team-members";
+const EMPLOYEES_KEY = "engelmig-employees";
+
+interface Employee { name: string; role?: string; }
 
 function loadSchedule(): WeekSchedule {
   try {
@@ -91,6 +94,8 @@ export default function DisponibilidadePage() {
   const [saving, setSaving] = useState(false);
   // Membros padrão das equipes (carregados do localStorage compartilhado com Equipes)
   const [defaultMembers, setDefaultMembers] = useState<Record<string, string[]>>({});
+  // Funcionários importados: usado para lookup de cargo no badge de membro
+  const [employees, setEmployees] = useState<Employee[]>([]);
   // Input de novo membro por equipe no dia
   const [newMemberInputs, setNewMemberInputs] = useState<Record<string, string>>({});
 
@@ -99,9 +104,15 @@ export default function DisponibilidadePage() {
     setSelectedDay(todayKey());
   }, []);
 
-  // Recarrega membros padrão sempre que a aba fica visível
+  // Recarrega membros padrão e funcionários sempre que a aba fica visível
   useEffect(() => {
-    const reload = () => setDefaultMembers(loadTeamMembers());
+    const reload = () => {
+      setDefaultMembers(loadTeamMembers());
+      try {
+        const s = localStorage.getItem(EMPLOYEES_KEY);
+        if (s) setEmployees(JSON.parse(s) as Employee[]);
+      } catch { /* ignore */ }
+    };
     reload();
     window.addEventListener("focus", reload);
     return () => window.removeEventListener("focus", reload);
@@ -419,13 +430,21 @@ export default function DisponibilidadePage() {
                             ) : dayComp.length === 0 ? (
                               <p className="mb-2 text-xs text-muted/60">Composição não definida</p>
                             ) : (
-                              <div className="mb-2 flex flex-wrap gap-1">
-                                {dayComp.map((name) => (
-                                  <span key={name} className="flex items-center gap-1 rounded-full border border-green-200 bg-white px-2 py-0.5 text-xs text-green-800">
-                                    {name}
-                                    <button onClick={() => removeMemberFromDay(selectedDay, team.id, name)} className="text-green-400 hover:text-red-500"><X size={9} /></button>
-                                  </span>
-                                ))}
+                              <div className="mb-2 flex flex-wrap gap-1.5">
+                                {dayComp.map((name) => {
+                                  const role = employees.find((e) => e.name === name)?.role;
+                                  return (
+                                    <span key={name} className="flex items-center gap-1.5 rounded-md border border-green-200 bg-white px-2 py-1 text-xs">
+                                      <span className="flex flex-col leading-tight">
+                                        <span className="font-medium text-green-800">{name}</span>
+                                        {role && (
+                                          <span className="text-[10px] text-green-600/70">{role}</span>
+                                        )}
+                                      </span>
+                                      <button onClick={() => removeMemberFromDay(selectedDay, team.id, name)} className="shrink-0 text-green-400 hover:text-red-500"><X size={9} /></button>
+                                    </span>
+                                  );
+                                })}
                               </div>
                             )}
                             <div className="flex gap-1">

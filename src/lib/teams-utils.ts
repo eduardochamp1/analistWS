@@ -32,8 +32,6 @@ export interface Emergency {
   selectedTeamId: string | null;
 }
 
-const TEAMS_STORAGE_KEY = "analist-ws-teams";
-
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
 }
@@ -48,23 +46,6 @@ export const teamColors = [
   { name: "Amarelo", value: "#eab308" },
   { name: "Ciano", value: "#06b6d4" },
 ];
-
-export function saveTeams(teams: Team[]): void {
-  if (typeof window !== "undefined") {
-    localStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(teams));
-  }
-}
-
-export function loadTeams(): Team[] {
-  if (typeof window === "undefined") return [];
-  const stored = localStorage.getItem(TEAMS_STORAGE_KEY);
-  if (!stored) return [];
-  try {
-    return JSON.parse(stored);
-  } catch {
-    return [];
-  }
-}
 
 // Fórmula de Haversine para calcular distância em km entre dois pontos
 export function haversineDistance(

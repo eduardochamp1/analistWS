@@ -12,7 +12,7 @@ export interface Team {
     status?: string;
 }
 
-export function useTeams() {
+export function useTeams(unit: "CCM" | "STC" = "CCM") {
     const [teams, setTeams] = useState<Team[]>([]);
     const [loading, setLoading] = useState(true);
     const { success, error } = useToast();
@@ -33,12 +33,11 @@ export function useTeams() {
     const fetchTeams = useCallback(async () => {
         try {
             setLoading(true);
-            const res = await fetch("/api/teams");
+            const res = await fetch(`/api/teams?unit=${unit}`);
 
             if (!res.ok) {
                 const errorData = await res.json().catch(() => ({}));
                 const errorMessage = errorData.error || `Erro ${res.status}: Falha ao buscar dados`;
-                console.error("[useTeams] Fetch error:", res.status, errorMessage);
                 throw new Error(errorMessage);
             }
 
@@ -51,7 +50,7 @@ export function useTeams() {
         } finally {
             setLoading(false);
         }
-    }, [error]);
+    }, [error, unit]);
 
     // Load teams on mount
     useEffect(() => {
@@ -74,7 +73,7 @@ export function useTeams() {
             const res = await fetch("/api/teams", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(teamData),
+                body: JSON.stringify({ ...teamData, unit }),
             });
 
             if (!res.ok) {

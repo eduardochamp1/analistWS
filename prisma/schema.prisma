@@ -103,6 +103,7 @@ model Team {
   members   Int      @default(3)
   status    String   @default("AVAILABLE") // AVAILABLE, IN_SERVICE, OFFLINE, PAUSED
   notes     String?
+  unit      String   @default("CCM") // CCM, STC
 
   userId         String?
   organizationId String?

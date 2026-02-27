@@ -68,13 +68,10 @@ export default function DashboardPage() {
   const [teamCount, setTeamCount] = useState(0);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem("analist-ws-teams");
-      if (stored) {
-        const teams = JSON.parse(stored);
-        setTeamCount(Array.isArray(teams) ? teams.length : 0);
-      }
-    } catch { /* ignore */ }
+    fetch("/api/teams")
+      .then((r) => r.json())
+      .then((data) => setTeamCount(Array.isArray(data) ? data.length : 0))
+      .catch(() => { /* ignore */ });
   }, []);
 
   return (

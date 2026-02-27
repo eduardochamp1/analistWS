@@ -2,17 +2,35 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
-  Users, Route, History, Calendar, Loader2, UserPlus, Construction,
+  Route, Calendar, Loader2, UserPlus, UsersRound, Construction,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+const STCEquipesPage = dynamic(() => import("@/app/stc/equipes/page"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-96 items-center justify-center">
+      <Loader2 size={32} className="animate-spin text-primary" />
+    </div>
+  ),
+});
+
+const STCFuncionariosPage = dynamic(() => import("@/app/stc/funcionarios/page"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-96 items-center justify-center">
+      <Loader2 size={32} className="animate-spin text-primary" />
+    </div>
+  ),
+});
+
 const TABS = [
-  { id: "equipes",        label: "Equipes",               icon: UserPlus },
-  { id: "emergencias",    label: "Gestão de Emergências",  icon: Users    },
-  { id: "rotas",          label: "Rotas",                  icon: Route    },
-  { id: "historico",      label: "Histórico",              icon: History  },
-  { id: "disponibilidade",label: "Disponibilidade",        icon: Calendar },
+  { id: "equipes",         label: "Equipes",        icon: UserPlus,   real: true  },
+  { id: "rotas",           label: "Rotas",           icon: Route,      real: false },
+  { id: "disponibilidade", label: "Disponibilidade", icon: Calendar,   real: false },
+  { id: "funcionarios",    label: "Funcionários",    icon: UsersRound, real: true  },
 ];
 
 function PlaceholderTab({ label }: { label: string }) {
@@ -74,8 +92,10 @@ function GestaoSTCContent() {
         </div>
       </div>
 
-      {/* Conteúdo placeholder */}
-      <PlaceholderTab label={activeTab?.label ?? ""} />
+      {/* Conteúdo */}
+      {activeId === "equipes"      && <STCEquipesPage />}
+      {activeId === "funcionarios" && <STCFuncionariosPage />}
+      {activeTab && !activeTab.real && <PlaceholderTab label={activeTab.label} />}
     </div>
   );
 }

@@ -32,8 +32,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
   OFFLINE:     { label: "Offline",     color: "bg-gray-100 text-gray-500",    icon: WifiOff },
 };
 
-// ── localStorage de membros ────────────────────────────────────────────────
-const MEMBERS_KEY = "engelmig-team-members";
+// ── localStorage de membros (STC) ─────────────────────────────────────────
+const MEMBERS_KEY = "engelmig-stc-team-members";
 
 function loadTeamMembers(): Record<string, string[]> {
   try {
@@ -50,18 +50,18 @@ function saveTeamMembers(data: Record<string, string[]>) {
 export { MEMBERS_KEY, loadTeamMembers };
 // ──────────────────────────────────────────────────────────────────────────
 
-// ── localStorage de funcionários ──────────────────────────────────────────
+// ── localStorage de funcionários (STC) ────────────────────────────────────
 export interface Employee {
-  name: string;        // COLABORADOR
-  role?: string;       // CARGO
-  uen?: string;        // UEN
-  matricula?: string;  // MATRÍCULA
-  admissao?: string;   // ADMISSÃO
-  local?: string;      // LOCAL
-  situacao?: string;   // SITUAÇÃO
+  name: string;
+  role?: string;
+  uen?: string;
+  matricula?: string;
+  admissao?: string;
+  local?: string;
+  situacao?: string;
 }
 
-const EMPLOYEES_KEY = "engelmig-employees";
+const EMPLOYEES_KEY = "engelmig-stc-employees";
 
 function loadEmployees(): Employee[] {
   try {
@@ -70,12 +70,11 @@ function loadEmployees(): Employee[] {
   } catch { /* ignore */ }
   return [];
 }
-
 // ──────────────────────────────────────────────────────────────────────────
 
-export default function EquipesPage() {
+export default function STCEquipesPage() {
   const { warning } = useToast();
-  const { teams, loading, createTeam, updateTeam, deleteTeam } = useTeams();
+  const { teams, loading, createTeam, updateTeam, deleteTeam } = useTeams("STC");
 
   const [clickMode, setClickMode] = useState<"team" | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -88,18 +87,12 @@ export default function EquipesPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [statusMenuId, setStatusMenuId] = useState<string | null>(null);
 
-  // Membros nomeados: Record<teamId, string[]>
   const [teamMembers, setTeamMembers] = useState<Record<string, string[]>>({});
-  // Qual equipe está com o painel de membros aberto
   const [expandedMembersId, setExpandedMembersId] = useState<string | null>(null);
-  // Input de novo membro por equipe
   const [newMemberInputs, setNewMemberInputs] = useState<Record<string, string>>({});
-  // Qual dropdown de sugestões está aberto (teamId)
   const [dropdownOpenId, setDropdownOpenId] = useState<string | null>(null);
-  // Ref para fechar dropdown ao clicar fora
   const dropdownRef = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Funcionários importados (usados apenas para autocomplete dos membros)
   const [employees, setEmployees] = useState<Employee[]>([]);
 
   useEffect(() => {
@@ -107,7 +100,6 @@ export default function EquipesPage() {
     setEmployees(loadEmployees());
   }, []);
 
-  // Todos os colaboradores conhecidos: funcionários importados + nomes já em equipes
   const allKnownCollaborators = useMemo((): Employee[] => {
     const map = new Map<string, Employee>();
     employees.forEach((e) => map.set(e.name, e));
@@ -211,8 +203,8 @@ export default function EquipesPage() {
       <div className="mb-6 flex items-center gap-3">
         <UserPlus size={28} className="text-accent" />
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Equipes</h1>
-          <p className="text-sm text-muted">Cadastre e gerencie as equipes de campo</p>
+          <h1 className="text-2xl font-bold text-foreground">Equipes STC</h1>
+          <p className="text-sm text-muted">Cadastre e gerencie as equipes de campo STC</p>
         </div>
       </div>
 
@@ -421,7 +413,6 @@ export default function EquipesPage() {
                             Composição padrão
                           </p>
 
-                          {/* Lista de membros */}
                           {members.length === 0 ? (
                             <p className="mb-2 text-xs text-muted/60">Nenhum membro cadastrado</p>
                           ) : (

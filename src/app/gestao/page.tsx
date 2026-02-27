@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { Users, Route, History, Calendar, Loader2, UserPlus } from "lucide-react";
+import { Users, Route, History, Calendar, Loader2, UserPlus, UsersRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Carrega as páginas existentes dinamicamente para evitar SSR de Leaflet
@@ -52,6 +52,15 @@ const DisponibilidadePage = dynamic(() => import("@/app/disponibilidade/page"), 
   ),
 });
 
+const FuncionariosPage = dynamic(() => import("@/app/funcionarios/page"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-96 items-center justify-center">
+      <Loader2 size={32} className="animate-spin text-primary" />
+    </div>
+  ),
+});
+
 const TABS = [
   {
     id: "equipes",
@@ -77,6 +86,11 @@ const TABS = [
     id: "disponibilidade",
     label: "Disponibilidade",
     icon: Calendar,
+  },
+  {
+    id: "funcionarios",
+    label: "Funcionários",
+    icon: UsersRound,
   },
 ];
 
@@ -131,6 +145,7 @@ function GestaoContent() {
       {activeId === "rotas" && <RoutesPage />}
       {activeId === "historico" && <HistoricoPage />}
       {activeId === "disponibilidade" && <DisponibilidadePage />}
+      {activeId === "funcionarios" && <FuncionariosPage />}
     </div>
   );
 }

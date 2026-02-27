@@ -19,9 +19,19 @@ export async function PUT(
             );
         }
 
+        // Somente campos editáveis do schema são aceitos — nunca passa body bruto ao Prisma
+        const { name, lat, lon, color, members, status, notes } = body;
         const team = await prisma.team.update({
             where: { id },
-            data: body,
+            data: {
+                ...(name    !== undefined && { name }),
+                ...(lat     !== undefined && { lat }),
+                ...(lon     !== undefined && { lon }),
+                ...(color   !== undefined && { color }),
+                ...(members !== undefined && { members }),
+                ...(status  !== undefined && { status }),
+                ...(notes   !== undefined && { notes }),
+            },
         });
 
         return NextResponse.json(team);
