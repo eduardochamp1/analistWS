@@ -12,7 +12,7 @@ import { LocationSearch } from "@/components/location-search";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/contexts/ToastContext";
 import { useTeams, Team } from "@/hooks/useTeams";
-import { useEmployees } from "@/hooks/useEmployees";
+import { useEmployees, Employee } from "@/hooks/useEmployees";
 
 const TeamsMap = dynamic(
   () => import("@/components/teams-map").then((mod) => mod.TeamsMap),
@@ -27,10 +27,10 @@ const TeamsMap = dynamic(
 );
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  AVAILABLE:   { label: "Disponível",  color: "bg-green-100 text-green-700",  icon: Wifi },
-  IN_SERVICE:  { label: "Em serviço",  color: "bg-amber-100 text-amber-700",  icon: Wrench },
-  PAUSED:      { label: "Pausado",     color: "bg-blue-100 text-blue-700",    icon: Clock },
-  OFFLINE:     { label: "Offline",     color: "bg-gray-100 text-gray-500",    icon: WifiOff },
+  AVAILABLE: { label: "Disponível", color: "bg-green-100 text-green-700", icon: Wifi },
+  IN_SERVICE: { label: "Em serviço", color: "bg-amber-100 text-amber-700", icon: Wrench },
+  PAUSED: { label: "Pausado", color: "bg-blue-100 text-blue-700", icon: Clock },
+  OFFLINE: { label: "Offline", color: "bg-gray-100 text-gray-500", icon: WifiOff },
 };
 
 // ── localStorage de membros ────────────────────────────────────────────────
@@ -521,10 +521,10 @@ export default function EquipesPage() {
                       <Icon size={10} /> {val.label}
                     </span>
                     <span className="text-xs text-muted">
-                      {key === "AVAILABLE"  && "Equipe pronta para atendimento"}
+                      {key === "AVAILABLE" && "Equipe pronta para atendimento"}
                       {key === "IN_SERVICE" && "Equipe em atendimento ativo"}
-                      {key === "PAUSED"     && "Equipe temporariamente pausada"}
-                      {key === "OFFLINE"    && "Equipe fora de operação"}
+                      {key === "PAUSED" && "Equipe temporariamente pausada"}
+                      {key === "OFFLINE" && "Equipe fora de operação"}
                     </span>
                   </div>
                 );

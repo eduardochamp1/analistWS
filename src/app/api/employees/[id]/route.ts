@@ -3,10 +3,10 @@ import { prisma } from "@/lib/prisma";
 
 export async function DELETE(
     _request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const { id } = params;
+        const { id } = await params;
         await prisma.$executeRaw`DELETE FROM funcionarios WHERE id = ${id}`;
         return NextResponse.json({ ok: true });
     } catch (error) {
@@ -18,10 +18,10 @@ export async function DELETE(
 // PATCH — update individual employee fields (asoExpiry, vacationDeadline, vacationStart, vacationEnd)
 export async function PATCH(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const { id } = params;
+        const { id } = await params;
         const body = await request.json() as {
             asoExpiry?: string | null;
             vacationDeadline?: string | null;
