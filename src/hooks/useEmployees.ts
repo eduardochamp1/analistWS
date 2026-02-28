@@ -31,34 +31,52 @@ function fmt(dateStr: string): string {
 export function getEmpAlerts(emp: Employee): EmpAlert[] {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const in30 = new Date(today);
-    in30.setDate(in30.getDate() + 30);
+
+    /** Positive = days remaining, negative = days overdue, 0 = today */
+    function diffDays(dateStr: string): number {
+        const target = new Date(dateStr + "T00:00:00");
+        return Math.ceil((target.getTime() - today.getTime()) / 86_400_000);
+    }
+
+    function plural(n: number): string {
+        return Math.abs(n) === 1 ? "dia" : "dias";
+    }
 
     const alerts: EmpAlert[] = [];
 
+    // ── ASO ────────────────────────────────────────────────────────────────────
     if (emp.asoExpiry) {
-        const expiry = new Date(emp.asoExpiry + "T00:00:00");
-        if (expiry < today) {
+        const days = diffDays(emp.asoExpiry);
+        if (days < 0) {
             alerts.push({ type: "error", msg: `ASO vencido em ${fmt(emp.asoExpiry)}` });
-        } else if (expiry <= in30) {
-            alerts.push({ type: "warning", msg: `ASO vence em ${fmt(emp.asoExpiry)}` });
+        } else if (days <= 30) {
+            alerts.push({ type: "warning", msg: `ASO próximo do vencimento — faltam ${days} ${plural(days)}` });
         }
     }
 
-    if (emp.vacationDeadline) {
-        const deadline = new Date(emp.vacationDeadline + "T00:00:00");
-        if (deadline < today) {
-            alerts.push({ type: "error", msg: `Limite de férias vencido (${fmt(emp.vacationDeadline)})` });
-        } else if (deadline <= in30) {
-            alerts.push({ type: "warning", msg: `Férias devem ser tiradas até ${fmt(emp.vacationDeadline)}` });
-        }
-    }
+    // ── Férias ─────────────────────────────────────────────────────────────────
+    const hasVacationPeriod = !!(emp.vacationStart && emp.vacationEnd);
 
-    if (emp.vacationStart && emp.vacationEnd) {
-        const start = new Date(emp.vacationStart + "T00:00:00");
-        const end = new Date(emp.vacationEnd + "T00:00:00");
-        if (start <= today && today <= end) {
-            alerts.push({ type: "info", msg: `Em férias até ${fmt(emp.vacationEnd)}` });
+    if (hasVacationPeriod) {
+        // Período de férias informado — ignora alerta de data-limite e mostra status do período
+        const daysToStart = diffDays(emp.vacationStart!);
+        const daysToEnd   = diffDays(emp.vacationEnd!);
+
+        if (daysToStart <= 0 && daysToEnd >= 0) {
+            // Dentro do período de férias
+            alerts.push({ type: "info", msg: `Colaborador de férias até ${fmt(emp.vacationEnd!)}` });
+        } else if (daysToStart > 0) {
+            // Férias ainda não começaram
+            alerts.push({ type: "info", msg: `Período de férias próximo — em ${daysToStart} ${plural(daysToStart)}` });
+        }
+        // Férias já encerradas → sem alerta (período já passou)
+    } else if (emp.vacationDeadline) {
+        // Sem período informado — alerta pela data-limite
+        const days = diffDays(emp.vacationDeadline);
+        if (days < 0) {
+            alerts.push({ type: "error", msg: `Colaborador ultrapassou o limite de férias` });
+        } else if (days <= 60) {
+            alerts.push({ type: "warning", msg: `Férias vencem nos próximos ${days} ${plural(days)}` });
         }
     }
 

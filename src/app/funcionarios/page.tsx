@@ -380,12 +380,12 @@ export default function FuncionariosPage() {
                       {isExpanded && (
                         <tr key={`${emp.id}-detail`} className="border-b border-card-border/50 bg-primary/5">
                           <td colSpan={TOTAL_COLS} className="px-4 pb-4 pt-2">
-                            <div className="max-w-2xl rounded-lg border border-primary/20 bg-card-bg p-4">
+                            <div className="rounded-lg border border-primary/20 bg-card-bg p-4">
                               <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">
                                 Compliance — {emp.name}
                               </p>
 
-                              <div className="grid gap-4 sm:grid-cols-3">
+                              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                                 {/* ASO */}
                                 <label className="block">
                                   <span className="mb-1 block text-[11px] font-semibold text-muted">ASO — Vencimento</span>
@@ -414,28 +414,33 @@ export default function FuncionariosPage() {
                                   )}
                                 </label>
 
-                                {/* Férias período */}
-                                <div>
-                                  <span className="mb-1 block text-[11px] font-semibold text-muted">Férias — Período</span>
-                                  <div className="flex items-center gap-1.5">
-                                    <input
-                                      type="date"
-                                      value={draft.vacationStart}
-                                      onChange={(e) => setDraft((p) => ({ ...p, vacationStart: e.target.value }))}
-                                      className="flex-1 rounded-md border border-card-border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary"
-                                    />
-                                    <span className="text-xs text-muted">até</span>
-                                    <input
-                                      type="date"
-                                      value={draft.vacationEnd}
-                                      onChange={(e) => setDraft((p) => ({ ...p, vacationEnd: e.target.value }))}
-                                      className="flex-1 rounded-md border border-card-border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary"
-                                    />
-                                  </div>
-                                  {draft.vacationStart && draft.vacationEnd && (
-                                    <p className="mt-0.5 text-[10px] text-muted/60">{fmt(draft.vacationStart)} – {fmt(draft.vacationEnd)}</p>
+                                {/* Férias início */}
+                                <label className="block">
+                                  <span className="mb-1 block text-[11px] font-semibold text-muted">Férias — Início</span>
+                                  <input
+                                    type="date"
+                                    value={draft.vacationStart}
+                                    onChange={(e) => setDraft((p) => ({ ...p, vacationStart: e.target.value }))}
+                                    className="w-full rounded-md border border-card-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+                                  />
+                                  {draft.vacationStart && (
+                                    <p className="mt-0.5 text-[10px] text-muted/60">{fmt(draft.vacationStart)}</p>
                                   )}
-                                </div>
+                                </label>
+
+                                {/* Férias fim */}
+                                <label className="block">
+                                  <span className="mb-1 block text-[11px] font-semibold text-muted">Férias — Fim</span>
+                                  <input
+                                    type="date"
+                                    value={draft.vacationEnd}
+                                    onChange={(e) => setDraft((p) => ({ ...p, vacationEnd: e.target.value }))}
+                                    className="w-full rounded-md border border-card-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+                                  />
+                                  {draft.vacationEnd && (
+                                    <p className="mt-0.5 text-[10px] text-muted/60">{fmt(draft.vacationEnd)}</p>
+                                  )}
+                                </label>
                               </div>
 
                               <div className="mt-3 flex items-center gap-2">

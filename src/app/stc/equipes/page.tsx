@@ -13,7 +13,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/contexts/ToastContext";
 import { useTeams, Team } from "@/hooks/useTeams";
 import { useEmployees, Employee } from "@/hooks/useEmployees";
-import { getEmpAlerts, alertSeverityColor } from "@/hooks/useEmployees";
+import { getEmpAlerts } from "@/hooks/useEmployees";
 
 const TeamsMap = dynamic(
   () => import("@/components/teams-map").then((mod) => mod.TeamsMap),
@@ -402,6 +402,48 @@ export default function STCEquipesPage() {
                         </button>
                       </div>
 
+                      {/* ── Alertas sempre visíveis ─────────────────────── */}
+                      {(() => {
+                        const membersWithAlerts = members
+                          .map((name) => {
+                            const emp = employees.find((e) => e.name === name) ?? allKnownCollaborators.find((e) => e.name === name);
+                            const alerts = emp ? getEmpAlerts(emp) : [];
+                            return { name, alerts };
+                          })
+                          .filter(({ alerts }) => alerts.length > 0);
+
+                        if (membersWithAlerts.length === 0) return null;
+
+                        return (
+                          <div className={cn(
+                            "border-t px-3 pb-2 pt-1.5",
+                            semEletricista2 ? "border-red-200" : "border-card-border/60"
+                          )}>
+                            <p className="mb-1.5 text-[9px] font-semibold uppercase tracking-wide text-muted/70">
+                              Alertas de membros
+                            </p>
+                            <div className="flex flex-col gap-1.5">
+                              {membersWithAlerts.map(({ name, alerts }) => (
+                                <div key={name} className="flex flex-col gap-0.5">
+                                  <span className="text-[10px] font-semibold text-foreground/80">{name}</span>
+                                  {alerts.map((a, ai) => (
+                                    <span key={ai} className={cn(
+                                      "flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-medium",
+                                      a.type === "error"   ? "bg-red-100 text-red-700"   :
+                                      a.type === "warning" ? "bg-amber-100 text-amber-700" :
+                                                             "bg-blue-100 text-blue-700"
+                                    )}>
+                                      <AlertTriangle size={8} className="shrink-0" />
+                                      {a.msg}
+                                    </span>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       {/* Painel de membros (expansível) */}
                       {membersExpanded && (
                         <div className={cn(
@@ -425,43 +467,59 @@ export default function STCEquipesPage() {
                           {members.length === 0 ? (
                             <p className="mb-2 text-xs text-muted/60">Nenhum membro cadastrado</p>
                           ) : (
-                            <div className="mb-2 flex flex-wrap gap-1.5">
+                            <div className="mb-2 flex flex-col gap-1.5">
                               {members.map((name) => {
                                 const emp = employees.find((e) => e.name === name) ?? allKnownCollaborators.find((e) => e.name === name);
                                 const isEl1 = /eletricista\s+i(?!i)/i.test(emp?.role ?? "");
                                 const empAlerts = emp ? getEmpAlerts(emp) : [];
-                                const dotColor = alertSeverityColor(empAlerts);
                                 return (
                                   <span
                                     key={name}
                                     className={cn(
-                                      "flex min-w-0 max-w-[200px] items-center gap-1.5 rounded-md border px-2 py-1 text-xs",
+                                      "flex min-w-0 flex-col rounded-md border px-2 py-1.5 text-xs",
                                       semEletricista2 && isEl1
                                         ? "border-red-200 bg-red-50"
                                         : "border-card-border bg-card-bg"
                                     )}
                                   >
-                                    {dotColor && (
-                                      <span className={cn("h-2 w-2 shrink-0 rounded-full", dotColor)} title={empAlerts[0]?.msg} />
-                                    )}
-                                    <span className="flex min-w-0 flex-col leading-tight">
-                                      <span className={cn(
-                                        "truncate font-medium",
-                                        semEletricista2 && isEl1 ? "text-red-800" : "text-foreground"
-                                      )}>{name}</span>
-                                      {emp?.role && (
+                                    {/* Linha: nome + cargo + botão remover */}
+                                    <span className="flex items-start gap-1.5">
+                                      <span className="flex min-w-0 flex-1 flex-col leading-tight">
                                         <span className={cn(
-                                          "truncate text-[10px]",
-                                          semEletricista2 && isEl1 ? "text-red-500/70" : "text-muted/70"
-                                        )}>{emp.role}</span>
-                                      )}
+                                          "truncate font-medium",
+                                          semEletricista2 && isEl1 ? "text-red-800" : "text-foreground"
+                                        )}>{name}</span>
+                                        {emp?.role && (
+                                          <span className={cn(
+                                            "truncate text-[10px]",
+                                            semEletricista2 && isEl1 ? "text-red-500/70" : "text-muted/70"
+                                          )}>{emp.role}</span>
+                                        )}
+                                      </span>
+                                      <button
+                                        onClick={() => removeMember(team.id, name)}
+                                        className="mt-0.5 shrink-0 text-muted/50 hover:text-red-500"
+                                      >
+                                        <X size={10} />
+                                      </button>
                                     </span>
-                                    <button
-                                      onClick={() => removeMember(team.id, name)}
-                                      className="shrink-0 text-muted/50 hover:text-red-500"
-                                    >
-                                      <X size={10} />
-                                    </button>
+
+                                    {/* Badges de alerta */}
+                                    {empAlerts.length > 0 && (
+                                      <span className="mt-1.5 flex flex-col gap-0.5">
+                                        {empAlerts.map((a, ai) => (
+                                          <span key={ai} className={cn(
+                                            "flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-medium",
+                                            a.type === "error"   ? "bg-red-100 text-red-700"   :
+                                            a.type === "warning" ? "bg-amber-100 text-amber-700" :
+                                                                   "bg-blue-100 text-blue-700"
+                                          )}>
+                                            <AlertTriangle size={8} className="shrink-0" />
+                                            {a.msg}
+                                          </span>
+                                        ))}
+                                      </span>
+                                    )}
                                   </span>
                                 );
                               })}
