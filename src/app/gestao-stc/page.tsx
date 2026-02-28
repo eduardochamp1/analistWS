@@ -26,10 +26,19 @@ const STCFuncionariosPage = dynamic(() => import("@/app/stc/funcionarios/page"),
   ),
 });
 
+const STCDisponibilidadePage = dynamic(() => import("@/app/stc/disponibilidade/page"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-96 items-center justify-center">
+      <Loader2 size={32} className="animate-spin text-primary" />
+    </div>
+  ),
+});
+
 const TABS = [
   { id: "equipes",         label: "Equipes",        icon: UserPlus,   real: true  },
   { id: "rotas",           label: "Rotas",           icon: Route,      real: false },
-  { id: "disponibilidade", label: "Disponibilidade", icon: Calendar,   real: false },
+  { id: "disponibilidade", label: "Disponibilidade", icon: Calendar,   real: true  },
   { id: "funcionarios",    label: "Funcionários",    icon: UsersRound, real: true  },
 ];
 
@@ -93,9 +102,10 @@ function GestaoSTCContent() {
       </div>
 
       {/* Conteúdo */}
-      {activeId === "equipes"      && <STCEquipesPage />}
-      {activeId === "funcionarios" && <STCFuncionariosPage />}
-      {activeTab && !activeTab.real && <PlaceholderTab label={activeTab.label} />}
+      {activeId === "equipes"         && <STCEquipesPage />}
+      {activeId === "disponibilidade" && <STCDisponibilidadePage />}
+      {activeId === "funcionarios"    && <STCFuncionariosPage />}
+      {activeTab && !activeTab.real   && <PlaceholderTab label={activeTab.label} />}
     </div>
   );
 }

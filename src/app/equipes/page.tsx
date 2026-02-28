@@ -12,6 +12,7 @@ import { LocationSearch } from "@/components/location-search";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/contexts/ToastContext";
 import { useTeams, Team } from "@/hooks/useTeams";
+import { useEmployees } from "@/hooks/useEmployees";
 
 const TeamsMap = dynamic(
   () => import("@/components/teams-map").then((mod) => mod.TeamsMap),
@@ -50,32 +51,11 @@ function saveTeamMembers(data: Record<string, string[]>) {
 export { MEMBERS_KEY, loadTeamMembers };
 // ──────────────────────────────────────────────────────────────────────────
 
-// ── localStorage de funcionários ──────────────────────────────────────────
-export interface Employee {
-  name: string;        // COLABORADOR
-  role?: string;       // CARGO
-  uen?: string;        // UEN
-  matricula?: string;  // MATRÍCULA
-  admissao?: string;   // ADMISSÃO
-  local?: string;      // LOCAL
-  situacao?: string;   // SITUAÇÃO
-}
-
-const EMPLOYEES_KEY = "engelmig-employees";
-
-function loadEmployees(): Employee[] {
-  try {
-    const s = localStorage.getItem(EMPLOYEES_KEY);
-    if (s) return JSON.parse(s) as Employee[];
-  } catch { /* ignore */ }
-  return [];
-}
-
-// ──────────────────────────────────────────────────────────────────────────
 
 export default function EquipesPage() {
   const { warning } = useToast();
   const { teams, loading, createTeam, updateTeam, deleteTeam } = useTeams();
+  const { employees } = useEmployees("CCM");
 
   const [clickMode, setClickMode] = useState<"team" | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -99,12 +79,8 @@ export default function EquipesPage() {
   // Ref para fechar dropdown ao clicar fora
   const dropdownRef = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Funcionários importados (usados apenas para autocomplete dos membros)
-  const [employees, setEmployees] = useState<Employee[]>([]);
-
   useEffect(() => {
     setTeamMembers(loadTeamMembers());
-    setEmployees(loadEmployees());
   }, []);
 
   // Todos os colaboradores conhecidos: funcionários importados + nomes já em equipes
@@ -349,9 +325,7 @@ export default function EquipesPage() {
                             <p className="truncate text-sm font-medium text-foreground">{team.name}</p>
                           )}
                           <p className="text-xs text-muted">
-                            {members.length > 0
-                              ? `${members.length} membro${members.length > 1 ? "s" : ""}`
-                              : `${team.members} membro${(team.members || 0) > 1 ? "s" : ""} (sem nomes)`}
+                            {members.length} membro{members.length !== 1 ? "s" : ""}
                           </p>
                         </div>
 
@@ -431,12 +405,12 @@ export default function EquipesPage() {
                                 return (
                                   <span
                                     key={name}
-                                    className="flex items-center gap-1.5 rounded-md border border-card-border bg-card-bg px-2 py-1 text-xs"
+                                    className="flex min-w-0 max-w-[200px] items-center gap-1.5 rounded-md border border-card-border bg-card-bg px-2 py-1 text-xs"
                                   >
-                                    <span className="flex flex-col leading-tight">
-                                      <span className="font-medium text-foreground">{name}</span>
+                                    <span className="flex min-w-0 flex-col leading-tight">
+                                      <span className="truncate font-medium text-foreground">{name}</span>
                                       {emp?.role && (
-                                        <span className="text-[10px] text-muted/70">{emp.role}</span>
+                                        <span className="truncate text-[10px] text-muted/70">{emp.role}</span>
                                       )}
                                     </span>
                                     <button

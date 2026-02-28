@@ -118,6 +118,28 @@ model Team {
   @@index([status])
 }
 
+model Funcionario {
+  id               String   @id @default(cuid())
+  name             String
+  role             String?
+  uen              String?
+  matricula        String?
+  admissao         String?
+  local            String?
+  situacao         String?
+  unit             String   @default("CCM") // CCM, STC
+  asoExpiry        String?  // YYYY-MM-DD — vencimento do ASO
+  vacationDeadline String?  // YYYY-MM-DD — data limite para tirar férias
+  vacationStart    String?  // YYYY-MM-DD — início das férias
+  vacationEnd      String?  // YYYY-MM-DD — fim das férias
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([unit])
+  @@map("funcionarios")
+}
+
 model Emergency {
   id                String   @id @default(cuid())
   name              String

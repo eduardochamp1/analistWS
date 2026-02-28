@@ -1,34 +1,11 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
-import { Users, Upload, Search, X, ChevronUp, ChevronDown, Pencil, Trash2, Check } from "lucide-react";
+import { useState, useMemo, useRef } from "react";
+import { Users, Upload, Search, X, ChevronUp, ChevronDown, Trash2, Loader2, AlertTriangle, Settings, Save } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/contexts/ToastContext";
-
-interface Employee {
-  name: string;
-  role?: string;
-  uen?: string;
-  matricula?: string;
-  admissao?: string;
-  local?: string;
-  situacao?: string;
-}
-
-const EMPLOYEES_KEY = "engelmig-stc-employees";
-
-function loadEmployees(): Employee[] {
-  try {
-    const s = localStorage.getItem(EMPLOYEES_KEY);
-    if (s) return JSON.parse(s) as Employee[];
-  } catch { /* ignore */ }
-  return [];
-}
-
-function saveEmployees(data: Employee[]) {
-  localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(data));
-}
+import { useEmployees, Employee, getEmpAlerts, alertSeverityColor } from "@/hooks/useEmployees";
 
 type SortKey = keyof Employee;
 type SortDir = "asc" | "desc";
@@ -53,9 +30,14 @@ function SituacaoBadge({ situacao }: { situacao?: string }) {
   );
 }
 
-const DATA_COLUMNS: { key: SortKey; label: string; mono?: boolean }[] = [
+function fmt(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+const DATA_COLUMNS: { key: SortKey; label: string }[] = [
   { key: "uen",       label: "UEN"         },
-  { key: "matricula", label: "Matrícula",   mono: true },
+  { key: "matricula", label: "Matrícula"   },
   { key: "admissao",  label: "Admissão"    },
   { key: "name",      label: "Colaborador" },
   { key: "role",      label: "Cargo"       },
@@ -63,29 +45,50 @@ const DATA_COLUMNS: { key: SortKey; label: string; mono?: boolean }[] = [
   { key: "situacao",  label: "Situação"    },
 ];
 
+const TOTAL_COLS = DATA_COLUMNS.length + 2; // + Alertas + Ações
 const PER_PAGE = 50;
 
-const EMPTY_EDIT: Employee = { name: "", role: "", uen: "", matricula: "", admissao: "", local: "", situacao: "" };
-
 export default function STCFuncionariosPage() {
-  const { success, error } = useToast();
-  const [employees, setEmployees] = useState<Employee[]>([]);
+  const { error } = useToast();
+  const { employees, loading, importEmployees, deleteEmployee, updateEmployee } = useEmployees("STC");
+
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(1);
   const [importing, setImporting] = useState(false);
 
-  const [editingEmp, setEditingEmp] = useState<Employee | null>(null);
-  const [editForm, setEditForm] = useState<Employee>(EMPTY_EDIT);
+  // Compliance detail panel
+  const [expandedEmpId, setExpandedEmpId] = useState<string | null>(null);
+  const [draft, setDraft] = useState({ asoExpiry: "", vacationDeadline: "", vacationStart: "", vacationEnd: "" });
+  const [saving, setSaving] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    setEmployees(loadEmployees());
-  }, []);
+  function openDetail(emp: Employee) {
+    if (expandedEmpId === emp.id) { setExpandedEmpId(null); return; }
+    setExpandedEmpId(emp.id ?? null);
+    setDraft({
+      asoExpiry:        emp.asoExpiry        ?? "",
+      vacationDeadline: emp.vacationDeadline ?? "",
+      vacationStart:    emp.vacationStart    ?? "",
+      vacationEnd:      emp.vacationEnd      ?? "",
+    });
+  }
 
-  // ── Importação ────────────────────────────────────────────────────────────
+  async function saveDetail(emp: Employee) {
+    setSaving(true);
+    await updateEmployee(emp, {
+      asoExpiry:        draft.asoExpiry        || null,
+      vacationDeadline: draft.vacationDeadline || null,
+      vacationStart:    draft.vacationStart    || null,
+      vacationEnd:      draft.vacationEnd      || null,
+    });
+    setSaving(false);
+    setExpandedEmpId(null);
+  }
+
+  // ── Importação ─────────────────────────────────────────────────────────────
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -135,59 +138,20 @@ export default function STCFuncionariosPage() {
         }))
         .filter((e) => e.name);
 
-      saveEmployees(data);
-      setEmployees(data);
+      await importEmployees(data);
       setPage(1);
       setSearch("");
-      setEditingEmp(null);
-      success(`${data.length} colaborador${data.length !== 1 ? "es" : ""} importado${data.length !== 1 ? "s" : ""} — lista substituída`);
-    } catch {
-      error("Erro ao ler o arquivo Excel");
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message !== "Import failed") {
+        error("Erro ao ler o arquivo Excel");
+      }
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = "";
     }
   };
 
-  // ── Excluir ───────────────────────────────────────────────────────────────
-  const deleteEmployee = (emp: Employee) => {
-    const updated = employees.filter((e) => e !== emp);
-    saveEmployees(updated);
-    setEmployees(updated);
-    if (editingEmp === emp) setEditingEmp(null);
-  };
-
-  // ── Editar ────────────────────────────────────────────────────────────────
-  const startEdit = (emp: Employee) => {
-    setEditingEmp(emp);
-    setEditForm({ ...emp });
-  };
-
-  const cancelEdit = () => {
-    setEditingEmp(null);
-    setEditForm(EMPTY_EDIT);
-  };
-
-  const saveEdit = () => {
-    if (!editForm.name.trim()) { error("Nome do colaborador é obrigatório"); return; }
-    const clean: Employee = {
-      name:      editForm.name.trim(),
-      role:      editForm.role?.trim() || undefined,
-      uen:       editForm.uen?.trim() || undefined,
-      matricula: editForm.matricula?.trim() || undefined,
-      admissao:  editForm.admissao?.trim() || undefined,
-      local:     editForm.local?.trim() || undefined,
-      situacao:  editForm.situacao?.trim() || undefined,
-    };
-    const updated = employees.map((e) => (e === editingEmp ? clean : e));
-    saveEmployees(updated);
-    setEmployees(updated);
-    setEditingEmp(null);
-    setEditForm(EMPTY_EDIT);
-    success("Colaborador atualizado");
-  };
-
-  // ── Filtro / Ordenação ────────────────────────────────────────────────────
+  // ── Filtro / Ordenação ─────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     const list = q
@@ -210,12 +174,8 @@ export default function STCFuncionariosPage() {
   const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   function handleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir("asc");
-    }
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("asc"); }
     setPage(1);
   }
 
@@ -226,17 +186,6 @@ export default function STCFuncionariosPage() {
       : <ChevronDown size={11} className="text-primary" />;
   }
 
-  const cellInput = (field: keyof Employee, placeholder?: string) => (
-    <input
-      type="text"
-      value={editForm[field] ?? ""}
-      onChange={(e) => setEditForm((prev) => ({ ...prev, [field]: e.target.value }))}
-      onKeyDown={(e) => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") cancelEdit(); }}
-      placeholder={placeholder}
-      className="w-full min-w-[80px] rounded border border-primary/40 bg-primary/5 px-2 py-1 text-xs outline-none focus:border-primary"
-    />
-  );
-
   return (
     <div>
       {/* Header */}
@@ -246,7 +195,9 @@ export default function STCFuncionariosPage() {
           <div>
             <h1 className="text-2xl font-bold text-foreground">Funcionários STC</h1>
             <p className="text-sm text-muted">
-              {employees.length > 0
+              {loading
+                ? "Carregando..."
+                : employees.length > 0
                 ? `${employees.length} colaborador${employees.length !== 1 ? "es" : ""} cadastrado${employees.length !== 1 ? "s" : ""}`
                 : "Importe a planilha de colaboradores"}
             </p>
@@ -256,10 +207,10 @@ export default function STCFuncionariosPage() {
         <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} />
         <button
           onClick={() => fileRef.current?.click()}
-          disabled={importing}
+          disabled={importing || loading}
           className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-hover disabled:opacity-60"
         >
-          <Upload size={16} />
+          {importing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
           {importing ? "Importando..." : "Importar Excel (.xlsx)"}
         </button>
       </div>
@@ -267,7 +218,7 @@ export default function STCFuncionariosPage() {
       {/* Barra de busca */}
       {employees.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-3">
-          <div className="relative min-w-0 flex-1 max-w-sm">
+          <div className="relative min-w-0 max-w-sm flex-1">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted/50" />
             <input
               type="text"
@@ -286,15 +237,17 @@ export default function STCFuncionariosPage() {
             )}
           </div>
           {search && (
-            <p className="text-sm text-muted">
-              {filtered.length} resultado{filtered.length !== 1 ? "s" : ""}
-            </p>
+            <p className="text-sm text-muted">{filtered.length} resultado{filtered.length !== 1 ? "s" : ""}</p>
           )}
         </div>
       )}
 
-      {/* Empty state */}
-      {employees.length === 0 ? (
+      {/* Loading state */}
+      {loading ? (
+        <div className="flex justify-center py-24">
+          <Loader2 size={32} className="animate-spin text-primary/40" />
+        </div>
+      ) : employees.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed border-card-border py-28">
           <Users size={44} className="text-muted/20" />
           <div className="text-center">
@@ -331,93 +284,188 @@ export default function STCFuncionariosPage() {
                     </th>
                   ))}
                   <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
+                    Alertas
+                  </th>
+                  <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
                     Ações
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {paginated.map((emp, i) => {
-                  const isEditing = editingEmp === emp;
+                  const alerts = getEmpAlerts(emp);
+                  const dotColor = alertSeverityColor(alerts);
+                  const isExpanded = expandedEmpId === emp.id;
+
                   return (
-                    <tr
-                      key={`${emp.matricula ?? emp.name}-${i}`}
-                      className={cn(
-                        "border-b border-card-border/50 last:border-0 transition-colors",
-                        isEditing ? "bg-primary/5" : "hover:bg-card-bg/60"
-                      )}
-                    >
-                      {isEditing ? (
-                        <>
-                          <td className="px-3 py-2">{cellInput("uen", "UEN")}</td>
-                          <td className="px-3 py-2">{cellInput("matricula", "Matrícula")}</td>
-                          <td className="px-3 py-2">{cellInput("admissao", "dd/mm/aaaa")}</td>
-                          <td className="px-3 py-2">{cellInput("name", "Nome *")}</td>
-                          <td className="px-3 py-2">{cellInput("role", "Cargo")}</td>
-                          <td className="px-3 py-2">{cellInput("local", "Local")}</td>
-                          <td className="px-3 py-2">{cellInput("situacao", "Situação")}</td>
-                          <td className="px-3 py-2">
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={saveEdit}
-                                title="Salvar"
-                                className="rounded p-1.5 text-primary transition-colors hover:bg-primary/10"
-                              >
-                                <Check size={14} />
-                              </button>
-                              <button
-                                onClick={cancelEdit}
-                                title="Cancelar"
-                                className="rounded p-1.5 text-muted transition-colors hover:bg-card-bg"
-                              >
-                                <X size={14} />
-                              </button>
+                    <>
+                      <tr
+                        key={emp.id ?? `${emp.matricula ?? emp.name}-${i}`}
+                        className={cn(
+                          "border-b border-card-border/50 transition-colors",
+                          isExpanded ? "bg-primary/5" : "hover:bg-card-bg/60",
+                          !isExpanded && "last:border-0"
+                        )}
+                      >
+                        <td className="whitespace-nowrap px-4 py-2.5 text-sm text-muted">
+                          {emp.uen ?? <span className="text-muted/40">—</span>}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-muted">
+                          {emp.matricula ?? <span className="not-italic text-muted/40">—</span>}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2.5 text-sm text-muted">
+                          {emp.admissao ?? <span className="text-muted/40">—</span>}
+                        </td>
+                        <td className="px-4 py-2.5 font-medium text-foreground">{emp.name}</td>
+                        <td className="px-4 py-2.5 text-sm text-muted">
+                          {emp.role ?? <span className="text-muted/40">—</span>}
+                        </td>
+                        <td className="px-4 py-2.5 text-sm text-muted">
+                          {emp.local ?? <span className="text-muted/40">—</span>}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <SituacaoBadge situacao={emp.situacao} />
+                        </td>
+
+                        {/* Alertas */}
+                        <td className="px-3 py-2.5">
+                          {alerts.length > 0 ? (
+                            <div className="flex flex-col gap-0.5">
+                              {alerts.map((a, ai) => (
+                                <span key={ai} className={cn(
+                                  "flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap",
+                                  a.type === "error"   ? "bg-red-100 text-red-700"   :
+                                  a.type === "warning" ? "bg-amber-100 text-amber-700" :
+                                                         "bg-blue-100 text-blue-700"
+                                )}>
+                                  <AlertTriangle size={9} className="shrink-0" />
+                                  {a.msg}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted/30 text-xs">—</span>
+                          )}
+                        </td>
+
+                        {/* Ações */}
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => openDetail(emp)}
+                              title="Dados de compliance (ASO, Férias)"
+                              className={cn(
+                                "rounded p-1.5 transition-colors",
+                                isExpanded
+                                  ? "bg-primary/10 text-primary"
+                                  : dotColor
+                                    ? "text-amber-500 hover:bg-amber-50 hover:text-amber-700"
+                                    : "text-muted hover:bg-card-bg hover:text-primary"
+                              )}
+                            >
+                              <Settings size={13} />
+                            </button>
+                            <button
+                              onClick={() => deleteEmployee(emp)}
+                              title="Excluir"
+                              className="rounded p-1.5 text-muted transition-colors hover:bg-red-50 hover:text-red-500"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Painel de compliance expandido */}
+                      {isExpanded && (
+                        <tr key={`${emp.id}-detail`} className="border-b border-card-border/50 bg-primary/5">
+                          <td colSpan={TOTAL_COLS} className="px-4 pb-4 pt-2">
+                            <div className="max-w-2xl rounded-lg border border-primary/20 bg-card-bg p-4">
+                              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">
+                                Compliance — {emp.name}
+                              </p>
+
+                              <div className="grid gap-4 sm:grid-cols-3">
+                                {/* ASO */}
+                                <label className="block">
+                                  <span className="mb-1 block text-[11px] font-semibold text-muted">ASO — Vencimento</span>
+                                  <input
+                                    type="date"
+                                    value={draft.asoExpiry}
+                                    onChange={(e) => setDraft((p) => ({ ...p, asoExpiry: e.target.value }))}
+                                    className="w-full rounded-md border border-card-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+                                  />
+                                  {draft.asoExpiry && (
+                                    <p className="mt-0.5 text-[10px] text-muted/60">{fmt(draft.asoExpiry)}</p>
+                                  )}
+                                </label>
+
+                                {/* Férias limite */}
+                                <label className="block">
+                                  <span className="mb-1 block text-[11px] font-semibold text-muted">Férias — Data limite</span>
+                                  <input
+                                    type="date"
+                                    value={draft.vacationDeadline}
+                                    onChange={(e) => setDraft((p) => ({ ...p, vacationDeadline: e.target.value }))}
+                                    className="w-full rounded-md border border-card-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+                                  />
+                                  {draft.vacationDeadline && (
+                                    <p className="mt-0.5 text-[10px] text-muted/60">{fmt(draft.vacationDeadline)}</p>
+                                  )}
+                                </label>
+
+                                {/* Férias período */}
+                                <div>
+                                  <span className="mb-1 block text-[11px] font-semibold text-muted">Férias — Período</span>
+                                  <div className="flex items-center gap-1.5">
+                                    <input
+                                      type="date"
+                                      value={draft.vacationStart}
+                                      onChange={(e) => setDraft((p) => ({ ...p, vacationStart: e.target.value }))}
+                                      className="flex-1 rounded-md border border-card-border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary"
+                                    />
+                                    <span className="text-xs text-muted">até</span>
+                                    <input
+                                      type="date"
+                                      value={draft.vacationEnd}
+                                      onChange={(e) => setDraft((p) => ({ ...p, vacationEnd: e.target.value }))}
+                                      className="flex-1 rounded-md border border-card-border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary"
+                                    />
+                                  </div>
+                                  {draft.vacationStart && draft.vacationEnd && (
+                                    <p className="mt-0.5 text-[10px] text-muted/60">{fmt(draft.vacationStart)} – {fmt(draft.vacationEnd)}</p>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="mt-3 flex items-center gap-2">
+                                <button
+                                  onClick={() => saveDetail(emp)}
+                                  disabled={saving}
+                                  className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-50"
+                                >
+                                  {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                                  Salvar
+                                </button>
+                                <button
+                                  onClick={() => setExpandedEmpId(null)}
+                                  className="text-xs text-muted hover:text-foreground"
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  onClick={() => setDraft({ asoExpiry: "", vacationDeadline: "", vacationStart: "", vacationEnd: "" })}
+                                  className="ml-auto text-xs text-muted/60 hover:text-red-500"
+                                  title="Limpar todos os campos"
+                                >
+                                  Limpar datas
+                                </button>
+                              </div>
                             </div>
                           </td>
-                        </>
-                      ) : (
-                        <>
-                          <td className="whitespace-nowrap px-4 py-2.5 text-sm text-muted">
-                            {emp.uen ?? <span className="text-muted/40">—</span>}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-muted">
-                            {emp.matricula ?? <span className="not-italic text-muted/40">—</span>}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-2.5 text-sm text-muted">
-                            {emp.admissao ?? <span className="text-muted/40">—</span>}
-                          </td>
-                          <td className="px-4 py-2.5 font-medium text-foreground">
-                            {emp.name}
-                          </td>
-                          <td className="px-4 py-2.5 text-sm text-muted">
-                            {emp.role ?? <span className="text-muted/40">—</span>}
-                          </td>
-                          <td className="px-4 py-2.5 text-sm text-muted">
-                            {emp.local ?? <span className="text-muted/40">—</span>}
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <SituacaoBadge situacao={emp.situacao} />
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => startEdit(emp)}
-                                title="Editar"
-                                className="rounded p-1.5 text-muted transition-colors hover:bg-card-bg hover:text-primary"
-                              >
-                                <Pencil size={13} />
-                              </button>
-                              <button
-                                onClick={() => deleteEmployee(emp)}
-                                title="Excluir"
-                                className="rounded p-1.5 text-muted transition-colors hover:bg-red-50 hover:text-red-500"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </td>
-                        </>
+                        </tr>
                       )}
-                    </tr>
+                    </>
                   );
                 })}
               </tbody>
@@ -432,8 +480,7 @@ export default function STCFuncionariosPage() {
                 <span className="font-medium text-foreground">
                   {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, filtered.length)}
                 </span>{" "}
-                de{" "}
-                <span className="font-medium text-foreground">{filtered.length}</span>
+                de <span className="font-medium text-foreground">{filtered.length}</span>
               </p>
               <div className="flex items-center gap-1">
                 <button

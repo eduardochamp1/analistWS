@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import {
-  UserPlus, Plus, Trash2, Pencil, X, Loader2,
+  UserPlus, Plus, Trash2, Pencil, X, Loader2, AlertTriangle,
   Wifi, WifiOff, Clock, Wrench, ChevronDown, ChevronUp, UserRound,
 } from "lucide-react";
 import { teamColors } from "@/lib/teams-utils";
@@ -12,6 +12,8 @@ import { LocationSearch } from "@/components/location-search";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/contexts/ToastContext";
 import { useTeams, Team } from "@/hooks/useTeams";
+import { useEmployees, Employee } from "@/hooks/useEmployees";
+import { getEmpAlerts, alertSeverityColor } from "@/hooks/useEmployees";
 
 const TeamsMap = dynamic(
   () => import("@/components/teams-map").then((mod) => mod.TeamsMap),
@@ -50,31 +52,11 @@ function saveTeamMembers(data: Record<string, string[]>) {
 export { MEMBERS_KEY, loadTeamMembers };
 // ──────────────────────────────────────────────────────────────────────────
 
-// ── localStorage de funcionários (STC) ────────────────────────────────────
-export interface Employee {
-  name: string;
-  role?: string;
-  uen?: string;
-  matricula?: string;
-  admissao?: string;
-  local?: string;
-  situacao?: string;
-}
-
-const EMPLOYEES_KEY = "engelmig-stc-employees";
-
-function loadEmployees(): Employee[] {
-  try {
-    const s = localStorage.getItem(EMPLOYEES_KEY);
-    if (s) return JSON.parse(s) as Employee[];
-  } catch { /* ignore */ }
-  return [];
-}
-// ──────────────────────────────────────────────────────────────────────────
 
 export default function STCEquipesPage() {
   const { warning } = useToast();
   const { teams, loading, createTeam, updateTeam, deleteTeam } = useTeams("STC");
+  const { employees } = useEmployees("STC");
 
   const [clickMode, setClickMode] = useState<"team" | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -93,11 +75,10 @@ export default function STCEquipesPage() {
   const [dropdownOpenId, setDropdownOpenId] = useState<string | null>(null);
   const dropdownRef = useRef<Record<string, HTMLDivElement | null>>({});
 
-  const [employees, setEmployees] = useState<Employee[]>([]);
+
 
   useEffect(() => {
     setTeamMembers(loadTeamMembers());
-    setEmployees(loadEmployees());
   }, []);
 
   const allKnownCollaborators = useMemo((): Employee[] => {
@@ -308,10 +289,20 @@ export default function STCEquipesPage() {
                   const members = getMembersForTeam(team.id);
                   const membersExpanded = expandedMembersId === team.id;
 
+                  // ── Validação STC: equipe com Eletricista I precisa de ao menos 1 Eletricista II
+                  const roleOf = (name: string) =>
+                    (allKnownCollaborators.find((e) => e.name === name)?.role ?? "").toLowerCase();
+                  const hasEl1 = members.some((n) => /eletricista\s+i(?!i)/i.test(roleOf(n)));
+                  const hasEl2 = members.some((n) => /eletricista\s+ii/i.test(roleOf(n)));
+                  const semEletricista2 = members.length > 0 && hasEl1 && !hasEl2;
+
                   return (
                     <div
                       key={team.id}
-                      className="rounded-lg border border-card-border bg-background"
+                      className={cn(
+                        "rounded-lg border",
+                        semEletricista2 ? "border-red-300 bg-red-50/40" : "border-card-border bg-background"
+                      )}
                     >
                       {/* Linha principal */}
                       <div className="flex items-center gap-2 px-3 py-2.5">
@@ -340,11 +331,16 @@ export default function STCEquipesPage() {
                           ) : (
                             <p className="truncate text-sm font-medium text-foreground">{team.name}</p>
                           )}
-                          <p className="text-xs text-muted">
-                            {members.length > 0
-                              ? `${members.length} membro${members.length > 1 ? "s" : ""}`
-                              : `${team.members} membro${(team.members || 0) > 1 ? "s" : ""} (sem nomes)`}
-                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs text-muted">
+                              {members.length} membro{members.length !== 1 ? "s" : ""}
+                            </p>
+                            {semEletricista2 && (
+                              <span className="flex items-center gap-0.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-bold text-red-700" title="Sem Eletricista II na equipe">
+                                <AlertTriangle size={9} /> Sem Elet. II
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {/* Status badge com menu */}
@@ -408,26 +404,56 @@ export default function STCEquipesPage() {
 
                       {/* Painel de membros (expansível) */}
                       {membersExpanded && (
-                        <div className="border-t border-card-border px-3 pb-3 pt-2">
+                        <div className={cn(
+                          "border-t px-3 pb-3 pt-2",
+                          semEletricista2 ? "border-red-200" : "border-card-border"
+                        )}>
                           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted">
                             Composição padrão
                           </p>
+
+                          {/* Alerta: sem Eletricista II */}
+                          {semEletricista2 && (
+                            <div className="mb-2 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-2">
+                              <AlertTriangle size={13} className="mt-0.5 shrink-0 text-red-500" />
+                              <p className="text-[11px] leading-snug text-red-700">
+                                <span className="font-semibold">Composição inválida —</span> equipe com Eletricista I deve ter ao menos um <span className="font-semibold">Eletricista II</span>.
+                              </p>
+                            </div>
+                          )}
 
                           {members.length === 0 ? (
                             <p className="mb-2 text-xs text-muted/60">Nenhum membro cadastrado</p>
                           ) : (
                             <div className="mb-2 flex flex-wrap gap-1.5">
                               {members.map((name) => {
-                                const emp = allKnownCollaborators.find((e) => e.name === name);
+                                const emp = employees.find((e) => e.name === name) ?? allKnownCollaborators.find((e) => e.name === name);
+                                const isEl1 = /eletricista\s+i(?!i)/i.test(emp?.role ?? "");
+                                const empAlerts = emp ? getEmpAlerts(emp) : [];
+                                const dotColor = alertSeverityColor(empAlerts);
                                 return (
                                   <span
                                     key={name}
-                                    className="flex items-center gap-1.5 rounded-md border border-card-border bg-card-bg px-2 py-1 text-xs"
+                                    className={cn(
+                                      "flex min-w-0 max-w-[200px] items-center gap-1.5 rounded-md border px-2 py-1 text-xs",
+                                      semEletricista2 && isEl1
+                                        ? "border-red-200 bg-red-50"
+                                        : "border-card-border bg-card-bg"
+                                    )}
                                   >
-                                    <span className="flex flex-col leading-tight">
-                                      <span className="font-medium text-foreground">{name}</span>
+                                    {dotColor && (
+                                      <span className={cn("h-2 w-2 shrink-0 rounded-full", dotColor)} title={empAlerts[0]?.msg} />
+                                    )}
+                                    <span className="flex min-w-0 flex-col leading-tight">
+                                      <span className={cn(
+                                        "truncate font-medium",
+                                        semEletricista2 && isEl1 ? "text-red-800" : "text-foreground"
+                                      )}>{name}</span>
                                       {emp?.role && (
-                                        <span className="text-[10px] text-muted/70">{emp.role}</span>
+                                        <span className={cn(
+                                          "truncate text-[10px]",
+                                          semEletricista2 && isEl1 ? "text-red-500/70" : "text-muted/70"
+                                        )}>{emp.role}</span>
                                       )}
                                     </span>
                                     <button
@@ -442,7 +468,7 @@ export default function STCEquipesPage() {
                             </div>
                           )}
 
-                          {/* Input adicionar membro com autocomplete */}
+{/* Input adicionar membro com autocomplete */}
                           {(() => {
                             const query = newMemberInputs[team.id] ?? "";
                             const currentMembers = getMembersForTeam(team.id);

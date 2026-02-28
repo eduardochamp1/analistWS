@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Calendar, Users, Plus, Trash2, ChevronLeft, ChevronRight, Save, Loader2, X, AlertTriangle, Pencil, MessageSquare, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/contexts/ToastContext";
 import { useTeams } from "@/hooks/useTeams";
-import { useEmployees, Employee } from "@/hooks/useEmployees";
+import { useEmployees, Employee, getEmpAlerts, alertSeverityColor } from "@/hooks/useEmployees";
 
 // ============================
 // Types
@@ -48,8 +48,9 @@ function todayKey(): string {
   return toKey(new Date());
 }
 
-const STORAGE_KEY = "engelmig-availability-schedule";
-const MEMBERS_KEY = "engelmig-team-members";
+// Isolated storage keys for STC
+const STORAGE_KEY = "engelmig-stc-availability-schedule";
+const MEMBERS_KEY = "engelmig-stc-team-members";
 
 function loadSchedule(): WeekSchedule {
   try {
@@ -92,9 +93,9 @@ function compositionChanged(dayComp: string[], defaultComp: string[]): boolean {
 // ============================
 // Main Component
 // ============================
-export default function DisponibilidadePage() {
-  const { teams, loading: teamsLoading } = useTeams();
-  const { employees } = useEmployees("CCM");
+export default function STCDisponibilidadePage() {
+  const { teams, loading: teamsLoading } = useTeams("STC");
+  const { employees } = useEmployees("STC");
   const { success } = useToast();
 
   const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()));
@@ -121,7 +122,7 @@ export default function DisponibilidadePage() {
     return () => window.removeEventListener("focus", reload);
   }, []);
 
-  // All collaborators for autocomplete: imported employees + named members in default compositions
+  // All collaborators for autocomplete: STC employees + named members in default compositions
   const allKnownCollaborators = useMemo((): Employee[] => {
     const map = new Map<string, Employee>();
     employees.forEach((e) => map.set(e.name, e));
@@ -294,7 +295,7 @@ export default function DisponibilidadePage() {
           <Calendar size={28} className="text-accent" />
           <div>
             <h1 className="text-2xl font-bold text-foreground">Disponibilidade de Equipes</h1>
-            <p className="text-sm text-muted">Escala semanal de plantão por equipe</p>
+            <p className="text-sm text-muted">Escala semanal de plantão por equipe — STC</p>
           </div>
         </div>
         <button
@@ -407,7 +408,7 @@ export default function DisponibilidadePage() {
             ) : teams.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-6 text-center">
                 <Users size={24} className="text-muted/40" />
-                <p className="text-sm text-muted">Cadastre equipes primeiro</p>
+                <p className="text-sm text-muted">Cadastre equipes STC primeiro</p>
               </div>
             ) : (
               <>
@@ -431,6 +432,26 @@ export default function DisponibilidadePage() {
 
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Equipes de plantão</p>
 
+                {/* Banner de alerta global para o dia */}
+                {(() => {
+                  const alertCount = (selectedDaySchedule?.teamIds ?? []).filter((tid) => {
+                    const comp = selectedDaySchedule?.compositions?.[tid] ?? [];
+                    const roleOfM = (name: string) =>
+                      (employees.find((e) => e.name === name)?.role ?? "").toLowerCase();
+                    const h1 = comp.some((n) => /eletricista\s+i(?!i)/i.test(roleOfM(n)));
+                    const h2 = comp.some((n) => /eletricista\s+ii/i.test(roleOfM(n)));
+                    return comp.length > 0 && h1 && !h2;
+                  }).length;
+                  return alertCount > 0 ? (
+                    <div className="mb-3 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                      <AlertTriangle size={14} className="shrink-0 text-red-500" />
+                      <p className="text-xs text-red-700">
+                        <span className="font-semibold">{alertCount} equipe{alertCount !== 1 ? "s" : ""}</span> sem Eletricista II — verifique a composição antes de confirmar a escala.
+                      </p>
+                    </div>
+                  ) : null;
+                })()}
+
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {teams.map((team) => {
                     const onDuty = (selectedDaySchedule?.teamIds ?? []).includes(team.id);
@@ -447,10 +468,22 @@ export default function DisponibilidadePage() {
                     );
                     const dropdownOpen = dropdownOpenKey === inputKey && suggestions.length > 0;
 
+                    // ── Validação de composição STC ──────────────────────────
+                    // Regra: equipe com ELETRICISTA I precisa ter ao menos 1 ELETRICISTA II
+                    const roleOf = (name: string) =>
+                      (employees.find((e) => e.name === name)?.role ?? "").toLowerCase();
+                    const hasEletricista1 = dayComp.some((n) => /eletricista\s+i(?!i)/i.test(roleOf(n)));
+                    const hasEletricista2 = dayComp.some((n) => /eletricista\s+ii/i.test(roleOf(n)));
+                    const semEletricista2 = onDuty && dayComp.length > 0 && hasEletricista1 && !hasEletricista2;
+
                     return (
                       <div key={team.id} className={cn(
                         "rounded-lg border transition-all",
-                        onDuty ? "border-green-300 bg-green-50" : "border-card-border bg-background"
+                        onDuty
+                          ? semEletricista2
+                            ? "border-red-300 bg-red-50"
+                            : "border-green-300 bg-green-50"
+                          : "border-card-border bg-background"
                       )}>
                         {/* Toggle */}
                         <button
@@ -461,7 +494,12 @@ export default function DisponibilidadePage() {
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium text-foreground">{team.name}</p>
                           </div>
-                          {changed && (
+                          {semEletricista2 && (
+                            <span className="flex items-center gap-0.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-bold text-red-700" title="Sem Eletricista II na equipe">
+                              <AlertTriangle size={9} /> Sem Elet. II
+                            </span>
+                          )}
+                          {changed && !semEletricista2 && (
                             <span className="flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700" title="Composição diferente do padrão">
                               <AlertTriangle size={9} /> Alterada
                             </span>
@@ -474,7 +512,10 @@ export default function DisponibilidadePage() {
 
                         {/* Composição */}
                         {onDuty && (
-                          <div className="border-t border-green-200 px-3 pb-3 pt-2">
+                          <div className={cn(
+                            "border-t px-3 pb-3 pt-2",
+                            semEletricista2 ? "border-red-200" : "border-green-200"
+                          )}>
                             <div className="mb-1.5 flex items-center justify-between">
                               <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Composição</p>
                               {changed && (
@@ -484,7 +525,7 @@ export default function DisponibilidadePage() {
                               )}
                             </div>
 
-                            {/* Chips de membros — X sempre visível */}
+                            {/* Chips de membros */}
                             {dayComp.length === 0 && !hasDefaultComp ? (
                               <p className="mb-2 text-xs text-muted/60">Sem membros padrão definidos</p>
                             ) : dayComp.length === 0 ? (
@@ -492,12 +533,30 @@ export default function DisponibilidadePage() {
                             ) : (
                               <div className="mb-2 flex flex-wrap gap-1.5">
                                 {dayComp.map((name) => {
-                                  const role = employees.find((e) => e.name === name)?.role;
+                                  const emp = employees.find((e) => e.name === name);
+                                  const role = emp?.role;
+                                  const isEl1 = /eletricista\s+i(?!i)/i.test(role ?? "");
+                                  const empAlerts = emp ? getEmpAlerts(emp) : [];
+                                  const dotColor = alertSeverityColor(empAlerts);
                                   return (
-                                    <span key={name} className="flex min-w-0 max-w-[180px] items-center gap-1.5 rounded-md border border-green-200 bg-white px-2 py-1 text-xs">
+                                    <span key={name} className={cn(
+                                      "flex min-w-0 max-w-[180px] items-center gap-1.5 rounded-md border px-2 py-1 text-xs",
+                                      semEletricista2 && isEl1
+                                        ? "border-red-200 bg-white"
+                                        : "border-green-200 bg-white"
+                                    )}>
+                                      {dotColor && (
+                                        <span className={cn("h-2 w-2 shrink-0 rounded-full", dotColor)} title={empAlerts[0]?.msg} />
+                                      )}
                                       <span className="flex min-w-0 flex-col leading-tight">
-                                        <span className="truncate font-medium text-green-800">{name}</span>
-                                        {role && <span className="truncate text-[10px] text-green-600/70">{role}</span>}
+                                        <span className={cn(
+                                          "truncate font-medium",
+                                          semEletricista2 && isEl1 ? "text-red-800" : "text-green-800"
+                                        )}>{name}</span>
+                                        {role && <span className={cn(
+                                          "truncate text-[10px]",
+                                          semEletricista2 && isEl1 ? "text-red-500/70" : "text-green-600/70"
+                                        )}>{role}</span>}
                                       </span>
                                       <button
                                         onClick={() => removeMemberFromDay(selectedDay, team.id, name)}
@@ -510,6 +569,41 @@ export default function DisponibilidadePage() {
                                 })}
                               </div>
                             )}
+
+                            {/* Alerta: sem Eletricista II */}
+                            {semEletricista2 && (
+                              <div className="mb-2 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-2">
+                                <AlertTriangle size={13} className="mt-0.5 shrink-0 text-red-500" />
+                                <p className="text-[11px] leading-snug text-red-700">
+                                  <span className="font-semibold">Composição inválida —</span> equipe com Eletricista I deve ter ao menos um <span className="font-semibold">Eletricista II</span>.
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Alertas de ASO / Férias por membro */}
+                            {(() => {
+                              const memberAlerts = dayComp.flatMap((name) => {
+                                const emp = employees.find((e) => e.name === name);
+                                if (!emp) return [];
+                                return getEmpAlerts(emp).map((a) => ({ name, ...a }));
+                              });
+                              if (memberAlerts.length === 0) return null;
+                              return (
+                                <div className="mb-2 space-y-1">
+                                  {memberAlerts.map((a, i) => (
+                                    <div key={i} className={cn(
+                                      "flex items-start gap-1.5 rounded px-2 py-1 text-[11px]",
+                                      a.type === "error" ? "bg-red-50 text-red-700 border border-red-200" :
+                                      a.type === "warning" ? "bg-amber-50 text-amber-700 border border-amber-200" :
+                                      "bg-blue-50 text-blue-700 border border-blue-200"
+                                    )}>
+                                      <AlertTriangle size={10} className="mt-0.5 shrink-0" />
+                                      <span><span className="font-semibold">{a.name}:</span> {a.msg}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })()}
 
                             {/* Input com dropdown */}
                             <div className="relative">
