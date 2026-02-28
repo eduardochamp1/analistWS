@@ -195,8 +195,9 @@ export function Sidebar() {
           </button>
 
           {!isCollapsed && (
-            <p className="mt-1 px-2 text-xs text-sidebar-text/40">
-              Engelmig Energia v1.0
+            <p className="mt-1 px-2 text-[10px] leading-snug text-sidebar-text/40">
+              Copyright &copy; {new Date().getFullYear()} AnalistWS.<br />
+              Built by José Eduardo Vilela Zouain.
             </p>
           )}
         </div>

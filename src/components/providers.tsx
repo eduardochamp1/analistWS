@@ -15,11 +15,20 @@ function Layout({ children }: { children: React.ReactNode }) {
               padding-left=var(--sidebar-w) no md+ (controlado pelo CSS var no :root).
               Veja globals.css — .main-content + @media md.
             */}
-            <main className="main-content flex-1 w-full min-w-0">
+            <main className="main-content flex min-h-screen flex-1 w-full min-w-0 flex-col">
                 {/* pt-16 compensa botão hamburger no mobile; md:pt-8 no desktop */}
-                <div className="p-6 pt-16 md:pt-8">
+                <div className="flex-1 p-6 pt-16 md:pt-8">
                     {children}
                 </div>
+
+                {/* Footer */}
+                <footer className="border-t border-card-border/50 px-6 py-3">
+                    <p className="text-center text-[11px] text-muted/50 select-none">
+                        Copyright &copy; {new Date().getFullYear()} AnalistWS.{" "}
+                        Built by{" "}
+                        <span className="font-medium text-muted/70">José Eduardo Vilela Zouain</span>.
+                    </p>
+                </footer>
             </main>
         </div>
     );
