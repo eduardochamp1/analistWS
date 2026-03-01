@@ -4,15 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   CloudSun, Users, Menu, X, LayoutDashboard, BarChart2,
-  ChevronLeft, ChevronRight, Moon, Sun,
+  ChevronLeft, ChevronRight, Moon, Sun, Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { EngelmigLogoFull, EngelmigLogo } from "./engelmig-logo";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { useDarkMode } from "@/contexts/DarkModeContext";
+import { getEmpAlerts } from "@/hooks/useEmployees";
+import type { Employee } from "@/hooks/useEmployees";
 
-type NavLink  = { type: "link";  label: string; href: string; icon: React.ElementType };
+type NavLink  = { type: "link";  label: string; href: string; icon: React.ElementType; showBadge?: boolean };
 type NavGroup = { type: "group"; label: string };
 type NavEntry = NavLink | NavGroup;
 
@@ -23,6 +25,8 @@ const navItems: NavEntry[] = [
   { type: "link",  label: "CCM - Gestão de Equipes",   href: "/gestao",     icon: Users },
   { type: "link",  label: "STC - Gestão de Equipes",   href: "/gestao-stc", icon: Users },
   { type: "link",  label: "BI's Engelmig",              href: "/bi",         icon: BarChart2 },
+  { type: "group", label: "Compliance" },
+  { type: "link",  label: "Central de Alertas",         href: "/alertas",    icon: Bell, showBadge: true },
 ];
 
 export function Sidebar() {
@@ -31,6 +35,32 @@ export function Sidebar() {
   const [isMobile, setIsMobile] = useState(false);
   const { collapsed, toggle } = useSidebar();
   const { dark, toggle: toggleDark } = useDarkMode();
+
+  // Alert badge count
+  const [alertCount, setAlertCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchAlertCount() {
+      try {
+        const [resCcm, resStc] = await Promise.all([
+          fetch("/api/employees?unit=CCM"),
+          fetch("/api/employees?unit=STC"),
+        ]);
+        const [ccm, stc]: [Employee[], Employee[]] = await Promise.all([
+          resCcm.ok ? resCcm.json() : Promise.resolve([]),
+          resStc.ok ? resStc.json() : Promise.resolve([]),
+        ]);
+        if (cancelled) return;
+        const total = [...ccm, ...stc].filter((e) => getEmpAlerts(e).length > 0).length;
+        setAlertCount(total);
+      } catch {
+        // silently ignore — badge just won't show
+      }
+    }
+    fetchAlertCount();
+    return () => { cancelled = true; };
+  }, [pathname]); // re-check when navigating (e.g. after saving compliance data)
 
   // Detect mobile breakpoint (md = 768px)
   useEffect(() => {
@@ -130,6 +160,7 @@ export function Sidebar() {
                 ? pathname === "/"
                 : pathname === item.href || pathname.startsWith(item.href + "/");
             const Icon = item.icon;
+            const hasBadge = item.showBadge && alertCount > 0;
 
             return (
               <Link
@@ -137,15 +168,32 @@ export function Sidebar() {
                 href={item.href}
                 title={isCollapsed ? item.label : undefined}
                 className={cn(
-                  "mb-1 flex items-center rounded-lg px-3 py-2.5 text-sm transition-colors",
+                  "relative mb-1 flex items-center rounded-lg px-3 py-2.5 text-sm transition-colors",
                   isCollapsed ? "justify-center gap-0" : "gap-3",
                   isActive
                     ? "bg-accent text-sidebar-bg font-semibold"
                     : "hover:bg-white/10"
                 )}
               >
-                <Icon size={18} className="shrink-0" />
-                {!isCollapsed && <span>{item.label}</span>}
+                {/* Icon — with dot badge when collapsed */}
+                <span className="relative shrink-0">
+                  <Icon size={18} />
+                  {hasBadge && isCollapsed && (
+                    <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500 ring-1 ring-sidebar-bg" />
+                  )}
+                </span>
+
+                {/* Label + pill badge when expanded */}
+                {!isCollapsed && (
+                  <>
+                    <span>{item.label}</span>
+                    {hasBadge && (
+                      <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white leading-none">
+                        {alertCount > 99 ? "99+" : alertCount}
+                      </span>
+                    )}
+                  </>
+                )}
               </Link>
             );
           })}

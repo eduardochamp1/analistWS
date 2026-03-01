@@ -115,12 +115,12 @@ export function useEmployees(unit: "CCM" | "STC" = "CCM") {
         fetchEmployees();
     }, [fetchEmployees]);
 
-    // Replaces all employees for this unit with the given list
-    const importEmployees = useCallback(async (data: Employee[]): Promise<number> => {
+    // Replaces or merges employees for this unit with the given list
+    const importEmployees = useCallback(async (data: Employee[], merge = false): Promise<number> => {
         const res = await fetch("/api/employees", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ employees: data, unit }),
+            body: JSON.stringify({ employees: data, unit, merge }),
         });
         if (!res.ok) {
             error("Erro ao importar funcionários");
@@ -128,9 +128,11 @@ export function useEmployees(unit: "CCM" | "STC" = "CCM") {
         }
         const result = await res.json();
         await fetchEmployees(); // Reload to get server-assigned IDs
-        success(
-            `${result.count} colaborador${result.count !== 1 ? "es" : ""} importado${result.count !== 1 ? "s" : ""} — lista substituída`
-        );
+        if (merge) {
+            success(`Mesclado: ${result.added ?? 0} adicionado${result.added !== 1 ? "s" : ""}, ${result.updated ?? 0} atualizado${result.updated !== 1 ? "s" : ""}`);
+        } else {
+            success(`${result.count} colaborador${result.count !== 1 ? "es" : ""} importado${result.count !== 1 ? "s" : ""} — lista substituída`);
+        }
         return result.count;
     }, [unit, fetchEmployees, success, error]);
 
@@ -166,5 +168,23 @@ export function useEmployees(unit: "CCM" | "STC" = "CCM") {
         success("Dados salvos");
     }, [error, success]);
 
-    return { employees, loading, fetchEmployees, importEmployees, deleteEmployee, updateEmployee };
+    // Creates a single new employee (does NOT replace existing ones)
+    const createEmployee = useCallback(async (
+        data: Omit<Employee, "id" | "asoExpiry" | "vacationDeadline" | "vacationStart" | "vacationEnd">
+    ): Promise<boolean> => {
+        const res = await fetch("/api/employees", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ employee: data, unit }),
+        });
+        if (!res.ok) {
+            error("Erro ao criar funcionário");
+            return false;
+        }
+        await fetchEmployees(); // reload to get server-assigned ID
+        success(`${data.name} adicionado com sucesso`);
+        return true;
+    }, [unit, fetchEmployees, success, error]);
+
+    return { employees, loading, fetchEmployees, importEmployees, deleteEmployee, updateEmployee, createEmployee };
 }

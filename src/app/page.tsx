@@ -4,7 +4,7 @@ import Link from "next/link";
 import {
   CloudSun, Users, UserRound, BarChart2, ArrowRight,
   Clock, Calendar, CalendarCheck, ShieldAlert,
-  AlertCircle, AlertTriangle, Loader2, CalendarX, Zap,
+  AlertCircle, AlertTriangle, Loader2, CalendarX, Zap, ExternalLink,
 } from "lucide-react";
 import { EngelmigLogo } from "@/components/engelmig-logo";
 import { cn } from "@/lib/utils";
@@ -196,31 +196,49 @@ function StatCard({
   icon: Icon,
   variant = "neutral",
   wide = false,
+  href,
 }: {
   label: string;
   value: number;
   icon: React.ElementType;
   variant?: Variant;
   wide?: boolean;
+  href?: string;
 }) {
-  return (
-    <div className={cn(
-      "flex items-center gap-3 rounded-xl border p-3 transition-colors",
-      CARD_STYLES[variant],
-      wide && "col-span-2",
-    )}>
+  const inner = (
+    <>
       <div className={cn(
         "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
         ICON_STYLES[variant],
       )}>
         <Icon size={16} />
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <p className="text-xl font-bold leading-none">{value}</p>
         <p className="mt-0.5 text-[11px] leading-snug opacity-75">{label}</p>
       </div>
-    </div>
+      {href && value > 0 && (
+        <ExternalLink size={12} className="shrink-0 opacity-40" />
+      )}
+    </>
   );
+
+  const base = cn(
+    "flex items-center gap-3 rounded-xl border p-3 transition-colors",
+    CARD_STYLES[variant],
+    wide && "col-span-2",
+    href && value > 0 && "cursor-pointer hover:opacity-80 hover:shadow-sm",
+  );
+
+  if (href && value > 0) {
+    return (
+      <Link href={href} className={base}>
+        {inner}
+      </Link>
+    );
+  }
+
+  return <div className={base}>{inner}</div>;
 }
 
 // ── Role Breakdown Card ────────────────────────────────────────────────────────
@@ -312,12 +330,14 @@ function UnitPanel({ unit, stats }: { unit: "CCM" | "STC"; stats: UnitStats | nu
             value={stats.asoExpiringSoon}
             icon={Clock}
             variant={stats.asoExpiringSoon > 0 ? "warning" : "ok"}
+            href={`/alertas?unit=${unit}&severity=warning&topic=aso`}
           />
           <StatCard
             label="ASOs vencidos"
             value={stats.asoExpired}
             icon={AlertCircle}
             variant={stats.asoExpired > 0 ? "error" : "ok"}
+            href={`/alertas?unit=${unit}&severity=error&topic=aso`}
           />
 
           {/* Férias — data-limite */}
@@ -326,12 +346,14 @@ function UnitPanel({ unit, stats }: { unit: "CCM" | "STC"; stats: UnitStats | nu
             value={stats.vacationDeadlineSoon}
             icon={Calendar}
             variant={stats.vacationDeadlineSoon > 0 ? "warning" : "ok"}
+            href={`/alertas?unit=${unit}&severity=warning&topic=vacation`}
           />
           <StatCard
             label="Funcionários com férias vencidas"
             value={stats.vacationDeadlineExpired}
             icon={CalendarX}
             variant={stats.vacationDeadlineExpired > 0 ? "error" : "ok"}
+            href={`/alertas?unit=${unit}&severity=error&topic=vacation`}
           />
 
           {/* Férias — período */}
@@ -340,12 +362,14 @@ function UnitPanel({ unit, stats }: { unit: "CCM" | "STC"; stats: UnitStats | nu
             value={stats.vacationScheduled}
             icon={CalendarCheck}
             variant={stats.vacationScheduled > 0 ? "info" : "neutral"}
+            href={`/alertas?unit=${unit}&severity=info&topic=vacation`}
           />
           <StatCard
             label="Trabalhando durante as férias"
             value={stats.workingOnVacation}
             icon={AlertTriangle}
             variant={stats.workingOnVacation > 0 ? "error" : "ok"}
+            href={`/alertas?unit=${unit}&severity=info&topic=vacation`}
           />
 
           {/* STC exclusivo */}

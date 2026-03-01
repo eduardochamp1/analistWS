@@ -75,9 +75,9 @@ function BiContent() {
 
   if (fullscreen) {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-white">
+      <div className="fixed inset-0 z-50 flex flex-col bg-background">
         {/* Linha 1: título + botão */}
-        <div className="flex shrink-0 items-center justify-between border-b border-card-border bg-white px-6 py-2">
+        <div className="flex shrink-0 items-center justify-between border-b border-card-border bg-background px-6 py-2">
           <div className="flex items-center gap-2">
             <BarChart2 size={18} className="text-accent" />
             <span className="text-sm font-semibold text-foreground">
@@ -93,7 +93,7 @@ function BiContent() {
           </button>
         </div>
         {/* Linha 2: tabs */}
-        <div className="shrink-0 border-b border-card-border bg-white px-6 py-2">
+        <div className="shrink-0 border-b border-card-border bg-background px-6 py-2">
           {tabBar}
         </div>
         <iframe
@@ -110,7 +110,7 @@ function BiContent() {
   return (
     <div className="-m-6 -mt-8 flex flex-col" style={{ height: "100vh" }}>
       {/* Linha 1: título + botão tela cheia */}
-      <div className="flex shrink-0 items-center justify-between border-b border-card-border bg-white px-6 pt-16 pb-2 md:pt-3 md:pb-2">
+      <div className="flex shrink-0 items-center justify-between border-b border-card-border bg-background px-6 pt-16 pb-2 md:pt-3 md:pb-2">
         <div className="flex items-center gap-3">
           <BarChart2 size={20} className="text-accent" />
           <div>
@@ -130,7 +130,7 @@ function BiContent() {
         </button>
       </div>
       {/* Linha 2: tabs com scroll horizontal */}
-      <div className="shrink-0 border-b border-card-border bg-white px-6 py-2">
+      <div className="shrink-0 border-b border-card-border bg-background px-6 py-2">
         {tabBar}
       </div>
       <iframe

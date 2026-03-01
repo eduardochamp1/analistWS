@@ -1,21 +1,28 @@
 "use client";
 
 import { useState, useMemo, useRef } from "react";
-import { Users, Upload, Search, X, ChevronUp, ChevronDown, Trash2, Loader2, AlertTriangle, Settings, Save } from "lucide-react";
+import { Users, Upload, Search, X, ChevronUp, ChevronDown, Trash2, Loader2, AlertTriangle, Settings, Save, UserPlus, FileDown } from "lucide-react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/contexts/ToastContext";
 import { useEmployees, Employee, getEmpAlerts, alertSeverityColor } from "@/hooks/useEmployees";
 
-type SortKey = keyof Employee;
+type SortKey = keyof Employee | "_alerts";
 type SortDir = "asc" | "desc";
 
+const ALERT_SEVERITY_SCORE = (emp: Employee): number => {
+  const alerts = getEmpAlerts(emp);
+  if (alerts.some((a) => a.type === "error"))   return 0;
+  if (alerts.some((a) => a.type === "warning")) return 1;
+  if (alerts.some((a) => a.type === "info"))    return 2;
+  return 3;
+};
+
 const SITUACAO_COLORS: Record<string, string> = {
-  ativo:      "bg-green-100 text-green-700",
-  afastado:   "bg-amber-100 text-amber-700",
-  ferias:     "bg-blue-100 text-blue-700",
-  desligado:  "bg-red-100 text-red-700",
-  licenca:    "bg-purple-100 text-purple-700",
+  trabalhando: "bg-green-100 text-green-700",
+  ferias:      "bg-blue-100 text-blue-700",
+  atestado:    "bg-amber-100 text-amber-700",
 };
 
 function SituacaoBadge({ situacao }: { situacao?: string }) {
@@ -47,10 +54,11 @@ const DATA_COLUMNS: { key: SortKey; label: string }[] = [
 
 const TOTAL_COLS = DATA_COLUMNS.length + 2; // + Alertas + Ações
 const PER_PAGE = 50;
+const EMPTY_NEW_EMP = { name: "", role: "", uen: "", matricula: "", admissao: "", local: "", situacao: "" };
 
 export default function STCFuncionariosPage() {
   const { error } = useToast();
-  const { employees, loading, importEmployees, deleteEmployee, updateEmployee } = useEmployees("STC");
+  const { employees, loading, importEmployees, deleteEmployee, updateEmployee, createEmployee } = useEmployees("STC");
 
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
@@ -61,19 +69,68 @@ export default function STCFuncionariosPage() {
   // Compliance detail panel
   const [expandedEmpId, setExpandedEmpId] = useState<string | null>(null);
   const [draft, setDraft] = useState({ asoExpiry: "", vacationDeadline: "", vacationStart: "", vacationEnd: "" });
+  const [originalDraft, setOriginalDraft] = useState({ asoExpiry: "", vacationDeadline: "", vacationStart: "", vacationEnd: "" });
   const [saving, setSaving] = useState(false);
+  const [confirmPending, setConfirmPending] = useState<(() => void) | null>(null);
+
+  // New employee modal
+  const [showNewEmpModal, setShowNewEmpModal] = useState(false);
+  const [newEmpDraft, setNewEmpDraft] = useState(EMPTY_NEW_EMP);
+  const [creatingEmp, setCreatingEmp] = useState(false);
+
+  // Situação filter chips
+  const [filterSituacao, setFilterSituacao] = useState<string | null>(null);
+
+  // Delete confirmation
+  const [empToDelete, setEmpToDelete] = useState<Employee | null>(null);
+
+  // Import mode modal
+  const [showImportModeModal, setShowImportModeModal] = useState(false);
+  const [importMode, setImportMode] = useState<"replace" | "merge">("replace");
+
+  async function handleCreateEmployee(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newEmpDraft.name.trim()) return;
+    setCreatingEmp(true);
+    const ok = await createEmployee({
+      name:      newEmpDraft.name.trim(),
+      role:      newEmpDraft.role.trim()      || undefined,
+      uen:       newEmpDraft.uen.trim()       || undefined,
+      matricula: newEmpDraft.matricula.trim() || undefined,
+      admissao: newEmpDraft.admissao
+        ? newEmpDraft.admissao.split("-").reverse().join("/")
+        : undefined,
+      local:     newEmpDraft.local.trim()     || undefined,
+      situacao:  newEmpDraft.situacao.trim()  || undefined,
+    });
+    setCreatingEmp(false);
+    if (ok) { setNewEmpDraft(EMPTY_NEW_EMP); setShowNewEmpModal(false); }
+  }
+
+  const isDirty = expandedEmpId !== null && (
+    draft.asoExpiry        !== originalDraft.asoExpiry        ||
+    draft.vacationDeadline !== originalDraft.vacationDeadline ||
+    draft.vacationStart    !== originalDraft.vacationStart    ||
+    draft.vacationEnd      !== originalDraft.vacationEnd
+  );
 
   const fileRef = useRef<HTMLInputElement>(null);
 
   function openDetail(emp: Employee) {
-    if (expandedEmpId === emp.id) { setExpandedEmpId(null); return; }
-    setExpandedEmpId(emp.id ?? null);
-    setDraft({
-      asoExpiry:        emp.asoExpiry        ?? "",
-      vacationDeadline: emp.vacationDeadline ?? "",
-      vacationStart:    emp.vacationStart    ?? "",
-      vacationEnd:      emp.vacationEnd      ?? "",
-    });
+    const doOpen = () => {
+      if (expandedEmpId === emp.id) { setExpandedEmpId(null); return; }
+      setExpandedEmpId(emp.id ?? null);
+      const d = {
+        asoExpiry:        emp.asoExpiry        ?? "",
+        vacationDeadline: emp.vacationDeadline ?? "",
+        vacationStart:    emp.vacationStart    ?? "",
+        vacationEnd:      emp.vacationEnd      ?? "",
+      };
+      setDraft(d);
+      setOriginalDraft(d);
+    };
+    if (isDirty) { setConfirmPending(() => doOpen); return; }
+    doOpen();
   }
 
   async function saveDetail(emp: Employee) {
@@ -85,6 +142,7 @@ export default function STCFuncionariosPage() {
       vacationEnd:      draft.vacationEnd      || null,
     });
     setSaving(false);
+    setOriginalDraft(draft); // mark clean
     setExpandedEmpId(null);
   }
 
@@ -138,7 +196,7 @@ export default function STCFuncionariosPage() {
         }))
         .filter((e) => e.name);
 
-      await importEmployees(data);
+      await importEmployees(data, importMode === "merge");
       setPage(1);
       setSearch("");
     } catch (err: unknown) {
@@ -151,24 +209,58 @@ export default function STCFuncionariosPage() {
     }
   };
 
+  // ── Exportar Excel ─────────────────────────────────────────────────────────
+  function exportToExcel() {
+    const today = new Date().toLocaleDateString("pt-BR").replace(/\//g, "-");
+    const rows = filtered.map((emp) => {
+      const alerts = getEmpAlerts(emp);
+      return {
+        UEN:                  emp.uen              ?? "",
+        Matrícula:            emp.matricula        ?? "",
+        Admissão:             emp.admissao         ?? "",
+        Colaborador:          emp.name,
+        Cargo:                emp.role             ?? "",
+        Local:                emp.local            ?? "",
+        Situação:             emp.situacao         ?? "",
+        "ASO — Vencimento":   emp.asoExpiry        ?? "",
+        "Férias — Limite":    emp.vacationDeadline ?? "",
+        "Férias — Início":    emp.vacationStart    ?? "",
+        "Férias — Fim":       emp.vacationEnd      ?? "",
+        Alertas:              alerts.map((a) => a.msg).join(" | ") || "—",
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Funcionários STC");
+    XLSX.writeFile(wb, `funcionarios-stc-${today}.xlsx`);
+  }
+
   // ── Filtro / Ordenação ─────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    const list = q
+    const normStr = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const list = (q
       ? employees.filter((e) =>
           [e.name, e.role, e.uen, e.matricula, e.local, e.situacao]
             .some((v) => v?.toLowerCase().includes(q))
         )
-      : employees;
+      : employees
+    ).filter((e) =>
+      !filterSituacao || (e.situacao ? normStr(e.situacao).includes(filterSituacao) : false)
+    );
 
     return [...list].sort((a, b) => {
+      if (sortKey === "_alerts") {
+        const diff = ALERT_SEVERITY_SCORE(a) - ALERT_SEVERITY_SCORE(b);
+        return sortDir === "asc" ? diff : -diff;
+      }
       const av = (a[sortKey] ?? "").toString().toLowerCase();
       const bv = (b[sortKey] ?? "").toString().toLowerCase();
       return sortDir === "asc"
         ? av.localeCompare(bv, "pt-BR")
         : bv.localeCompare(av, "pt-BR");
     });
-  }, [employees, search, sortKey, sortDir]);
+  }, [employees, search, sortKey, sortDir, filterSituacao]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
   const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -205,14 +297,23 @@ export default function STCFuncionariosPage() {
         </div>
 
         <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} />
-        <button
-          onClick={() => fileRef.current?.click()}
-          disabled={importing || loading}
-          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-hover disabled:opacity-60"
-        >
-          {importing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-          {importing ? "Importando..." : "Importar Excel (.xlsx)"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowNewEmpModal(true)}
+            className="flex items-center gap-2 rounded-lg border border-primary/40 px-4 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/5"
+          >
+            <UserPlus size={16} />
+            Novo Funcionário
+          </button>
+          <button
+            onClick={() => employees.length > 0 ? setShowImportModeModal(true) : fileRef.current?.click()}
+            disabled={importing || loading}
+            className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-hover disabled:opacity-60"
+          >
+            {importing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+            {importing ? "Importando..." : "Importar Excel (.xlsx)"}
+          </button>
+        </div>
       </div>
 
       {/* Barra de busca */}
@@ -236,9 +337,37 @@ export default function STCFuncionariosPage() {
               </button>
             )}
           </div>
-          {search && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {["trabalhando", "ferias", "atestado"].map((key) => {
+              const labels: Record<string, string> = { trabalhando: "Trabalhando", ferias: "Férias", atestado: "Atestado" };
+              const active = filterSituacao === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => { setFilterSituacao(active ? null : key); setPage(1); }}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+                    active
+                      ? SITUACAO_COLORS[key]
+                      : "border border-card-border text-muted hover:text-foreground"
+                  )}
+                >
+                  {labels[key]}
+                </button>
+              );
+            })}
+          </div>
+          {(search || filterSituacao) && (
             <p className="text-sm text-muted">{filtered.length} resultado{filtered.length !== 1 ? "s" : ""}</p>
           )}
+          <button
+            onClick={exportToExcel}
+            title="Exportar lista atual para Excel"
+            className="ml-auto flex items-center gap-1.5 rounded-lg border border-card-border px-3 py-2 text-xs font-medium text-muted transition-colors hover:border-primary/30 hover:text-primary"
+          >
+            <FileDown size={14} />
+            Exportar .xlsx
+          </button>
         </div>
       )}
 
@@ -283,8 +412,14 @@ export default function STCFuncionariosPage() {
                       </div>
                     </th>
                   ))}
-                  <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
-                    Alertas
+                  <th
+                    onClick={() => handleSort("_alerts")}
+                    className="cursor-pointer select-none whitespace-nowrap px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-muted transition-colors hover:text-foreground"
+                  >
+                    <div className="flex items-center gap-1">
+                      Alertas
+                      <SortIcon field="_alerts" />
+                    </div>
                   </th>
                   <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
                     Ações
@@ -355,7 +490,7 @@ export default function STCFuncionariosPage() {
                               onClick={() => openDetail(emp)}
                               title="Dados de compliance (ASO, Férias)"
                               className={cn(
-                                "rounded p-1.5 transition-colors",
+                                "relative rounded p-1.5 transition-colors",
                                 isExpanded
                                   ? "bg-primary/10 text-primary"
                                   : dotColor
@@ -364,9 +499,12 @@ export default function STCFuncionariosPage() {
                               )}
                             >
                               <Settings size={13} />
+                              {isExpanded && isDirty && (
+                                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-pulse rounded-full bg-amber-400 ring-1 ring-card-bg" />
+                              )}
                             </button>
                             <button
-                              onClick={() => deleteEmployee(emp)}
+                              onClick={() => setEmpToDelete(emp)}
                               title="Excluir"
                               className="rounded p-1.5 text-muted transition-colors hover:bg-red-50 hover:text-red-500"
                             >
@@ -381,9 +519,17 @@ export default function STCFuncionariosPage() {
                         <tr key={`${emp.id}-detail`} className="border-b border-card-border/50 bg-primary/5">
                           <td colSpan={TOTAL_COLS} className="px-4 pb-4 pt-2">
                             <div className="rounded-lg border border-primary/20 bg-card-bg p-4">
-                              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">
-                                Compliance — {emp.name}
-                              </p>
+                              <div className="mb-3 flex items-center justify-between gap-2">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                                  Compliance — {emp.name}
+                                </p>
+                                {isDirty && (
+                                  <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+                                    Alterações não salvas
+                                  </span>
+                                )}
+                              </div>
 
                               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                                 {/* ASO */}
@@ -508,6 +654,195 @@ export default function STCFuncionariosPage() {
           )}
         </>
       )}
+
+      {/* Modal — Novo Funcionário */}
+      {showNewEmpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-xl border border-card-border bg-card-bg shadow-xl">
+            <div className="flex items-center justify-between border-b border-card-border px-5 py-4">
+              <div className="flex items-center gap-2">
+                <UserPlus size={18} className="text-primary" />
+                <h2 className="text-base font-semibold text-foreground">Novo Colaborador</h2>
+              </div>
+              <button
+                onClick={() => { setShowNewEmpModal(false); setNewEmpDraft(EMPTY_NEW_EMP); }}
+                className="rounded-md p-1.5 text-muted transition-colors hover:bg-card-border/50 hover:text-foreground"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateEmployee} className="p-5">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block sm:col-span-2">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">
+                    Nome <span className="text-red-500">*</span>
+                  </span>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    value={newEmpDraft.name}
+                    onChange={(e) => setNewEmpDraft((p) => ({ ...p, name: e.target.value.replace(/[0-9]/g, "").toUpperCase() }))}
+                    placeholder="NOME COMPLETO"
+                    className="w-full rounded-lg border border-card-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Cargo</span>
+                  <input
+                    type="text"
+                    value={newEmpDraft.role}
+                    onChange={(e) => setNewEmpDraft((p) => ({ ...p, role: e.target.value.toUpperCase() }))}
+                    placeholder="EX: ANALISTA"
+                    className="w-full rounded-lg border border-card-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">UEN</span>
+                  <input
+                    type="text"
+                    value={newEmpDraft.uen}
+                    onChange={(e) => setNewEmpDraft((p) => ({ ...p, uen: e.target.value.replace(/\D/g, "").slice(0, 3) }))}
+                    placeholder="Ex: 123"
+                    inputMode="numeric"
+                    maxLength={3}
+                    className="w-full rounded-lg border border-card-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Matrícula</span>
+                  <input
+                    type="text"
+                    value={newEmpDraft.matricula}
+                    onChange={(e) => setNewEmpDraft((p) => ({ ...p, matricula: e.target.value.replace(/\D/g, "").slice(0, 5) }))}
+                    placeholder="00000"
+                    inputMode="numeric"
+                    maxLength={5}
+                    className="w-full rounded-lg border border-card-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                  />
+                  {newEmpDraft.matricula.length > 0 && newEmpDraft.matricula.length !== 5 && (
+                    <p className="mt-0.5 text-[10px] text-red-500">Deve ter exatamente 5 dígitos</p>
+                  )}
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Admissão</span>
+                  <input
+                    type="date"
+                    value={newEmpDraft.admissao}
+                    onChange={(e) => setNewEmpDraft((p) => ({ ...p, admissao: e.target.value }))}
+                    className="w-full rounded-lg border border-card-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Local / Setor</span>
+                  <input
+                    type="text"
+                    value={newEmpDraft.local}
+                    onChange={(e) => setNewEmpDraft((p) => ({ ...p, local: e.target.value }))}
+                    placeholder="Ex: Escritório central"
+                    className="w-full rounded-lg border border-card-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                  />
+                </label>
+                <label className="block sm:col-span-2">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Situação</span>
+                  <select
+                    value={newEmpDraft.situacao}
+                    onChange={(e) => setNewEmpDraft((p) => ({ ...p, situacao: e.target.value }))}
+                    className="w-full rounded-lg border border-card-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                  >
+                    <option value="">— Selecione —</option>
+                    <option value="Trabalhando">1 · Trabalhando</option>
+                    <option value="Férias">2 · Férias</option>
+                    <option value="Atestado">3 · Atestado</option>
+                  </select>
+                </label>
+              </div>
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowNewEmpModal(false); setNewEmpDraft(EMPTY_NEW_EMP); }}
+                  className="rounded-lg border border-card-border px-4 py-2 text-sm text-muted transition-colors hover:text-foreground"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={!newEmpDraft.name.trim() || creatingEmp || (newEmpDraft.matricula.length > 0 && newEmpDraft.matricula.length !== 5)}
+                  className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-hover disabled:opacity-50"
+                >
+                  {creatingEmp ? <Loader2 size={15} className="animate-spin" /> : <UserPlus size={15} />}
+                  {creatingEmp ? "Adicionando..." : "Adicionar"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal — Modo de Importação */}
+      {showImportModeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-xl border border-card-border bg-card-bg shadow-xl">
+            <div className="flex items-center justify-between border-b border-card-border px-5 py-4">
+              <div className="flex items-center gap-2">
+                <Upload size={18} className="text-primary" />
+                <h2 className="text-base font-semibold text-foreground">Modo de Importação</h2>
+              </div>
+              <button
+                onClick={() => setShowImportModeModal(false)}
+                className="rounded-md p-1.5 text-muted transition-colors hover:bg-card-border/50 hover:text-foreground"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-5">
+              <p className="mb-4 text-sm text-muted">Como deseja importar os dados da planilha?</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  onClick={() => { setImportMode("replace"); setShowImportModeModal(false); fileRef.current?.click(); }}
+                  className="flex flex-col gap-2 rounded-lg border-2 border-red-200 bg-red-50 p-4 text-left transition-colors hover:border-red-400"
+                >
+                  <Trash2 size={20} className="text-red-500" />
+                  <p className="text-sm font-semibold text-foreground">Substituir tudo</p>
+                  <p className="text-xs text-muted">Apaga todos os colaboradores existentes e importa os da planilha</p>
+                </button>
+                <button
+                  onClick={() => { setImportMode("merge"); setShowImportModeModal(false); fileRef.current?.click(); }}
+                  className="flex flex-col gap-2 rounded-lg border-2 border-primary/20 bg-primary/5 p-4 text-left transition-colors hover:border-primary/50"
+                >
+                  <Upload size={20} className="text-primary" />
+                  <p className="text-sm font-semibold text-foreground">Mesclar</p>
+                  <p className="text-xs text-muted">Atualiza quem já existe e adiciona os novos, sem apagar ninguém</p>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm discard unsaved changes */}
+      <ConfirmDialog
+        open={confirmPending !== null}
+        title="Alterações não salvas"
+        message="Você tem alterações não salvas neste colaborador. Se continuar, elas serão descartadas."
+        confirmLabel="Descartar alterações"
+        cancelLabel="Continuar editando"
+        variant="danger"
+        onConfirm={() => { confirmPending?.(); setConfirmPending(null); }}
+        onCancel={() => setConfirmPending(null)}
+      />
+
+      {/* Confirm delete employee */}
+      <ConfirmDialog
+        open={empToDelete !== null}
+        title="Excluir colaborador"
+        message={`Tem certeza que deseja excluir ${empToDelete?.name ?? "este colaborador"}? Esta ação não pode ser desfeita.`}
+        confirmLabel="Excluir"
+        cancelLabel="Cancelar"
+        variant="danger"
+        onConfirm={async () => { if (empToDelete) { await deleteEmployee(empToDelete); } setEmpToDelete(null); }}
+        onCancel={() => setEmpToDelete(null)}
+      />
     </div>
   );
 }

@@ -49,10 +49,10 @@ export function ToastContainer() {
                 return (
                     <div
                         key={toast.id}
+                        style={{ animation: "toast-in 0.3s ease-out" }}
                         className={cn(
                             "pointer-events-auto flex items-start gap-3 rounded-lg border-l-4 p-4 shadow-lg",
-                            "min-w-[320px] max-w-md",
-                            "animate-in slide-in-from-right-full duration-300",
+                            "min-w-[300px] max-w-md",
                             config.bgColor,
                             config.borderColor
                         )}

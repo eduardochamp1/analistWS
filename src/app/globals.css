@@ -77,3 +77,26 @@ body {
     padding-left: var(--sidebar-w);
   }
 }
+
+/* ---- Print styles ---- */
+@media print {
+  /* Remove sidebar offset from main content */
+  .main-content { padding-left: 0 !important; }
+  /* Hide structural chrome */
+  aside, footer { display: none !important; }
+  /* Force white page background and dark text */
+  body { background: #fff !important; color: #111 !important; }
+  /* Make table borders visible on paper */
+  table th, table td { border-color: #ccc !important; color: #111 !important; }
+  table thead tr { background: #f0f0f0 !important; }
+}
+
+/* ---- Toast animation ---- */
+@keyframes toast-in {
+  from { transform: translateX(calc(100% + 1.5rem)); opacity: 0; }
+  to   { transform: translateX(0);                   opacity: 1; }
+}
+@keyframes toast-out {
+  from { transform: translateX(0);                   opacity: 1; }
+  to   { transform: translateX(calc(100% + 1.5rem)); opacity: 0; }
+}
