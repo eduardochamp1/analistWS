@@ -16,7 +16,7 @@ export async function GET() {
   const username   = process.env.TRACKING_USERNAME;
   const password   = process.env.TRACKING_PASSWORD;
   const hashAuth   = process.env.TRACKING_HASH_AUTH;
-  const clientCode = process.env.TRACKING_CLIENT_CODE ?? "18";
+  const clientCode = Number(process.env.TRACKING_CLIENT_CODE ?? "18");
 
   if (!username || !password || !hashAuth) {
     return NextResponse.json(
@@ -79,7 +79,7 @@ export async function GET() {
         lat:       Number(v.Latitude),
         lon:       Number(v.Longitude),
         ignition:  Boolean(v.Ignition),
-        address:   String(v.Address ?? ""),
+        address:   v.Address ? String(v.Address) : "",
         eventDate: String(v.EventDate ?? ""),
       }));
 
