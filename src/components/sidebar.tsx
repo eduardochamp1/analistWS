@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   CloudSun, Users, Menu, X, LayoutDashboard, BarChart2,
-  ChevronLeft, ChevronRight, Moon, Sun, Bell,
+  ChevronLeft, ChevronRight, Moon, Sun, Bell, MapPin,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
@@ -25,6 +25,8 @@ const navItems: NavEntry[] = [
   { type: "link",  label: "CCM - Gestão de Equipes",   href: "/gestao",     icon: Users },
   { type: "link",  label: "STC - Gestão de Equipes",   href: "/gestao-stc", icon: Users },
   { type: "link",  label: "BI's Engelmig",              href: "/bi",         icon: BarChart2 },
+  { type: "group", label: "Operacional" },
+  { type: "link",  label: "Rastreamento",               href: "/rastreamento", icon: MapPin },
   { type: "group", label: "Compliance" },
   { type: "link",  label: "Central de Alertas",         href: "/alertas",    icon: Bell, showBadge: true },
 ];
