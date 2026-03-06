@@ -40,7 +40,6 @@ export default function RastreamentoPage() {
   const countdownRef  = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchVehicles = useCallback(async () => {
-    setError(null);
     try {
       const res = await fetch("/api/tracking");
       if (!res.ok) {
@@ -48,6 +47,8 @@ export default function RastreamentoPage() {
         throw new Error(body.error ?? `Erro ${res.status}`);
       }
       const data: VehiclePosition[] = await res.json();
+      // Só limpa o erro se a busca realmente funcionar
+      setError(null);
       setVehicles(data);
       setLastUpdate(new Date());
       setCountdown(REFRESH_INTERVAL_MS / 1000);
@@ -79,7 +80,7 @@ export default function RastreamentoPage() {
     if (countdownRef.current) clearInterval(countdownRef.current);
 
     setLoading(true);
-    fetchVehicles().then(() => {
+    fetchVehicles().finally(() => {
       intervalRef.current  = setInterval(fetchVehicles, REFRESH_INTERVAL_MS);
       countdownRef.current = setInterval(
         () => setCountdown((c) => (c <= 1 ? REFRESH_INTERVAL_MS / 1000 : c - 1)),
