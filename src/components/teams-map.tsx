@@ -157,6 +157,11 @@ interface TeamsMapProps {
   teamVehicles?: Record<string, string>; // teamId → plate (vehicle name)
 }
 
+// Verifica se o nome do veículo contém a placa (matching flexível)
+function vehicleMatchesPlate(vehicleName: string, plate: string): boolean {
+  return vehicleName.toUpperCase().includes(plate.toUpperCase());
+}
+
 export function TeamsMap({
   teams,
   emergencyData,
@@ -190,49 +195,41 @@ export function TeamsMap({
     [teams]
   );
 
-  // Mapa de plate (uppercase) → VehiclePosition para lookup rápido
-  const vehicleByPlate = useMemo(() => {
-    const map = new Map<string, VehiclePosition>();
-    vehiclePositions.forEach((v) => {
-      // O nome do veículo pode conter a placa — indexar por nome completo
-      map.set(v.name.toUpperCase(), v);
-    });
-    return map;
-  }, [vehiclePositions]);
-
-  // Mapa de plate (uppercase) → Team vinculada
-  const plateToTeam = useMemo(() => {
+  // vehicleName (uppercase) → Team vinculada (via matching flexível de placa)
+  const nameToTeam = useMemo(() => {
     const map = new Map<string, Team>();
     Object.entries(teamVehicles).forEach(([teamId, plate]) => {
       const team = teamById.get(teamId);
-      if (team) map.set(plate.toUpperCase(), team);
+      if (!team) return;
+      const vehicle = vehiclePositions.find((v) => vehicleMatchesPlate(v.name, plate));
+      if (vehicle) map.set(vehicle.name.toUpperCase(), team);
     });
     return map;
-  }, [teamVehicles, teamById]);
+  }, [teamVehicles, teamById, vehiclePositions]);
 
   // Marcadores de veículos
   const vehicleMarkers = useMemo(
     () =>
       vehiclePositions.map((v) => {
-        const linkedTeam = plateToTeam.get(v.name.toUpperCase());
+        const linkedTeam = nameToTeam.get(v.name.toUpperCase());
         return {
           vehicle: v,
           linkedTeam,
           icon: createVehicleIcon(v.ignition, linkedTeam?.color),
         };
       }),
-    [vehiclePositions, plateToTeam]
+    [vehiclePositions, nameToTeam]
   );
 
-  // Polylines: equipe → veículo vinculado (se posição disponível)
+  // Polylines: equipe → veículo vinculado (matching flexível)
   const teamVehicleLines = useMemo(() => {
     return Object.entries(teamVehicles).flatMap(([teamId, plate]) => {
       const team = teamById.get(teamId);
-      const vehicle = vehicleByPlate.get(plate.toUpperCase());
+      const vehicle = vehiclePositions.find((v) => vehicleMatchesPlate(v.name, plate));
       if (!team || !vehicle) return [];
       return [{ team, vehicle }];
     });
-  }, [teamVehicles, teamById, vehicleByPlate]);
+  }, [teamVehicles, teamById, vehiclePositions]);
 
   return (
     <>
@@ -262,7 +259,7 @@ export function TeamsMap({
           const safeName = team.name.replace(/</g, "&lt;").replace(/>/g, "&gt;");
           const linkedPlate = teamVehicles[team.id];
           const linkedVehicle = linkedPlate
-            ? vehicleByPlate.get(linkedPlate.toUpperCase())
+            ? vehiclePositions.find((v) => vehicleMatchesPlate(v.name, linkedPlate))
             : undefined;
           return (
             <Marker key={team.id} position={[team.lat, team.lon]} icon={icon}>
