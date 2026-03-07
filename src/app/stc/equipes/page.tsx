@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import {
   UserPlus, Plus, Trash2, Pencil, X, Loader2, AlertTriangle,
-  UserRound, Car, Filter,
+  UserRound, Car, Filter, RefreshCw,
 } from "lucide-react";
 import { teamColors } from "@/lib/teams-utils";
 import { cn } from "@/lib/utils";
@@ -98,9 +98,12 @@ export default function STCEquipesPage() {
   const [uen0121Plates, setUen0121Plates] = useState<string[]>([]);
   const [vehiclePositions, setVehiclePositions] = useState<VehiclePosition[]>([]);
 
-  // ── Filtros do mapa ───────────────────────────────────────────────────
+  // ── Filtros e controle de atualização do mapa ────────────────────────
   const [filterPlate, setFilterPlate] = useState("");
   const [filterTeam, setFilterTeam]   = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated]   = useState<Date | null>(null);
+  const [countdown, setCountdown]       = useState(30);
 
   // Veículos filtrados para o mapa
   const filteredVehiclePositions = useMemo(() => {
@@ -132,9 +135,10 @@ export default function STCEquipesPage() {
       .catch(() => {});
   }, []);
 
-  // Buscar posições dos veículos da UEN 0121 (polling 30s)
+  // Buscar posições dos veículos da UEN 0121
   const fetchVehiclePositions = useCallback(async () => {
     if (uen0121Plates.length === 0) return;
+    setIsRefreshing(true);
     try {
       const r = await fetch("/api/tracking");
       if (!r.ok) return;
@@ -143,14 +147,27 @@ export default function STCEquipesPage() {
         uen0121Plates.some((plate) => vehicleMatchesPlate(v.name, plate))
       );
       setVehiclePositions(filtered);
+      setLastUpdated(new Date());
+      setCountdown(30);
     } catch { /* ignore */ }
+    finally { setIsRefreshing(false); }
   }, [uen0121Plates]);
 
+  // Polling automático a cada 30s
   useEffect(() => {
     fetchVehiclePositions();
     const interval = setInterval(fetchVehiclePositions, 30_000);
     return () => clearInterval(interval);
   }, [fetchVehiclePositions]);
+
+  // Contador regressivo de 30 → 0
+  useEffect(() => {
+    if (!lastUpdated) return;
+    const tick = setInterval(() => {
+      setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1_000);
+    return () => clearInterval(tick);
+  }, [lastUpdated]);
 
   // ─────────────────────────────────────────────────────────────────────
 
@@ -852,8 +869,42 @@ export default function STCEquipesPage() {
               </button>
             )}
 
-            <span className="ml-auto text-[10px] text-muted">
-              {filteredVehiclePositions.length} veículo{filteredVehiclePositions.length !== 1 ? "s" : ""} exibido{filteredVehiclePositions.length !== 1 ? "s" : ""}
+            {/* Separador */}
+            <span className="ml-auto flex items-center gap-2">
+              {/* Contador regressivo */}
+              {lastUpdated && (
+                <span className="flex items-center gap-1 text-[10px] text-muted">
+                  <span
+                    className={cn(
+                      "inline-block h-1.5 w-1.5 rounded-full",
+                      countdown > 10 ? "bg-green-500" : countdown > 5 ? "bg-amber-400" : "bg-red-400 animate-pulse"
+                    )}
+                  />
+                  Atualiza em {countdown}s
+                </span>
+              )}
+
+              {/* Última atualização */}
+              {lastUpdated && (
+                <span className="text-[10px] text-muted/70">
+                  Última: {lastUpdated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                </span>
+              )}
+
+              {/* Botão refresh manual */}
+              <button
+                onClick={fetchVehiclePositions}
+                disabled={isRefreshing || uen0121Plates.length === 0}
+                className="flex items-center gap-1 rounded-md border border-card-border bg-background px-2 py-1 text-[11px] text-muted transition-colors hover:border-primary hover:text-primary disabled:opacity-40"
+                title="Atualizar agora"
+              >
+                <RefreshCw size={11} className={cn(isRefreshing && "animate-spin")} />
+                {isRefreshing ? "Atualizando..." : "Atualizar"}
+              </button>
+
+              <span className="text-[10px] text-muted">
+                {filteredVehiclePositions.length} veículo{filteredVehiclePositions.length !== 1 ? "s" : ""}
+              </span>
             </span>
           </div>
 
