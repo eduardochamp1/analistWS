@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import {
   UserPlus, Plus, Trash2, Pencil, X, Loader2, AlertTriangle,
-  UserRound, Car, Filter, RefreshCw, Maximize2, Minimize2,
+  UserRound, Car, Filter, RefreshCw, Maximize2, Minimize2, Clock, LocateFixed,
 } from "lucide-react";
 import { teamColors } from "@/lib/teams-utils";
 import { cn } from "@/lib/utils";
@@ -105,6 +105,9 @@ export default function STCEquipesPage() {
   const [lastUpdated, setLastUpdated]   = useState<Date | null>(null);
   const [countdown, setCountdown]       = useState(30);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [flyToTarget, setFlyToTarget] = useState<{ lat: number; lon: number } | null>(null);
+  const [viewResetKey, setViewResetKey] = useState(0);
 
   // Veículos filtrados para o mapa
   const filteredVehiclePositions = useMemo(() => {
@@ -185,6 +188,12 @@ export default function STCEquipesPage() {
     return () => clearTimeout(timer);
   }, [isFullscreen]);
 
+  // Relógio em tempo real para o painel TV
+  useEffect(() => {
+    const tick = setInterval(() => setCurrentTime(new Date()), 1_000);
+    return () => clearInterval(tick);
+  }, []);
+
   // ─────────────────────────────────────────────────────────────────────
 
   const allKnownCollaborators = useMemo((): Employee[] => {
@@ -195,6 +204,9 @@ export default function STCEquipesPage() {
     );
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }, [teamMembers, employees]);
+
+  const onCount  = vehiclePositions.filter((v) => v.ignition === true).length;
+  const offCount = vehiclePositions.filter((v) => v.ignition === false).length;
 
   const getMembersForTeam = (teamId: string): string[] =>
     teamMembers[teamId] ?? [];
@@ -553,19 +565,6 @@ export default function STCEquipesPage() {
                           </div>
                         </div>
 
-                        {/* Status do veículo */}
-                        {linkedPlate && (
-                          <span
-                            className={cn(
-                              "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                              vehicleStatus.color
-                            )}
-                          >
-                            <Car size={10} />
-                            {vehicleStatus.label}
-                          </span>
-                        )}
-
                         {/* Select rápido de veículo */}
                         <select
                           value={teamVehicles[team.id] ?? ""}
@@ -854,8 +853,42 @@ export default function STCEquipesPage() {
             isFullscreen && "fixed inset-0 z-[9999] bg-background p-3"
           )}
         >
+          {/* ── Barra de métricas TV (só em fullscreen) ─────────────────── */}
+          {isFullscreen && (
+            <div className="flex shrink-0 items-center gap-4 rounded-lg border border-card-border bg-card-bg px-4 py-2">
+              <Clock size={16} className="shrink-0 text-primary" />
+              <span className="font-mono text-xl font-bold text-foreground">
+                {currentTime.toLocaleTimeString("pt-BR")}
+              </span>
+              <span className="h-5 w-px bg-card-border" />
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-green-700">
+                <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
+                {onCount} ligado{onCount !== 1 ? "s" : ""}
+              </span>
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-gray-500">
+                <span className="h-2.5 w-2.5 rounded-full bg-gray-400" />
+                {offCount} desligado{offCount !== 1 ? "s" : ""}
+              </span>
+              {lastUpdated && (
+                <>
+                  <span className="h-5 w-px bg-card-border" />
+                  <span className="flex items-center gap-1.5 text-xs text-muted">
+                    <span className={cn(
+                      "h-2 w-2 rounded-full",
+                      countdown > 10 ? "bg-green-500" : countdown > 5 ? "bg-amber-400" : "bg-red-400 animate-pulse"
+                    )} />
+                    Atualiza em {countdown}s
+                  </span>
+                  <span className="ml-auto text-[11px] text-muted/70">
+                    Última: {lastUpdated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Barra de filtros + controles */}
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-card-border bg-card-bg px-3 py-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border border-card-border bg-card-bg px-3 py-2">
             <Filter size={13} className="shrink-0 text-muted" />
             <span className="text-xs font-medium text-muted">Filtrar:</span>
 
@@ -890,9 +923,20 @@ export default function STCEquipesPage() {
               </button>
             )}
 
+            {/* Botão de reset de visão — aparece quando uma equipe está focada */}
+            {flyToTarget && (
+              <button
+                onClick={() => { setFlyToTarget(null); setViewResetKey((k) => k + 1); }}
+                className="flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary hover:bg-primary/20"
+                title="Voltar para visão geral"
+              >
+                <LocateFixed size={11} /> Ver todos
+              </button>
+            )}
+
             <span className="ml-auto flex items-center gap-2">
               {/* Contador regressivo */}
-              {lastUpdated && (
+              {!isFullscreen && lastUpdated && (
                 <span className="flex items-center gap-1 text-[10px] text-muted">
                   <span
                     className={cn(
@@ -905,7 +949,7 @@ export default function STCEquipesPage() {
               )}
 
               {/* Última atualização */}
-              {lastUpdated && (
+              {!isFullscreen && lastUpdated && (
                 <span className="text-[10px] text-muted/70">
                   Última: {lastUpdated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                 </span>
@@ -940,83 +984,171 @@ export default function STCEquipesPage() {
             </span>
           </div>
 
-          {/* Mapa com legenda flutuante */}
-          <div
-            className="relative overflow-hidden rounded-xl border border-card-border"
-            style={{ height: isFullscreen ? "calc(100vh - 68px)" : "560px" }}
-          >
-            <TeamsMap
-              teams={[]}
-              emergencyData={[]}
-              highlightedTeamIds={new Set()}
-              onMapClick={() => {}}
-              clickMode={null}
-              vehiclePositions={filteredVehiclePositions}
-              teamVehicles={teamVehicles}
-            />
+          {/* Área principal: mapa + painel lateral TV */}
+          <div className={cn("flex gap-2", isFullscreen ? "min-h-0 flex-1" : "")}>
+            {/* Mapa com legenda flutuante */}
+            <div
+              className={cn(
+                "relative min-w-0 flex-1 overflow-hidden rounded-xl border border-card-border",
+                isFullscreen ? "min-h-0" : ""
+              )}
+              style={{ height: isFullscreen ? undefined : "560px" }}
+            >
+              <TeamsMap
+                teams={[]}
+                emergencyData={[]}
+                highlightedTeamIds={new Set()}
+                onMapClick={() => {}}
+                clickMode={null}
+                vehiclePositions={filteredVehiclePositions}
+                teamVehicles={teamVehicles}
+                flyTo={flyToTarget}
+                viewResetKey={viewResetKey}
+              />
 
-            {/* Legenda flutuante no canto inferior esquerdo */}
-            <div className="absolute bottom-6 left-3 z-[1000] min-w-[160px] rounded-xl border border-white/20 bg-white/90 p-3 shadow-lg backdrop-blur-sm dark:bg-gray-900/90">
-              <p className="mb-2 text-[9px] font-bold uppercase tracking-widest text-gray-500">
-                Legenda
-              </p>
-              <div className="space-y-1.5">
-                {/* Status ignição */}
-                <div className="flex items-center gap-2">
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-500">
-                    <Car size={10} className="text-white" />
-                  </span>
-                  <span className="text-[10px] text-gray-700 dark:text-gray-300">Ligado / Em movimento</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-400">
-                    <Car size={10} className="text-white" />
-                  </span>
-                  <span className="text-[10px] text-gray-700 dark:text-gray-300">Parado / Desligado</span>
-                </div>
+              {/* Legenda flutuante no canto inferior esquerdo (oculta em fullscreen) */}
+              {!isFullscreen && <div className="absolute bottom-6 left-3 z-[1000] min-w-[160px] rounded-xl border border-white/20 bg-white/90 p-3 shadow-lg backdrop-blur-sm dark:bg-gray-900/90">
+                <p className="mb-2 text-[9px] font-bold uppercase tracking-widest text-gray-500">
+                  Legenda
+                </p>
+                <div className="space-y-1.5">
+                  {/* Status ignição */}
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-500">
+                      <Car size={10} className="text-white" />
+                    </span>
+                    <span className="text-[10px] text-gray-700 dark:text-gray-300">Ligado / Em movimento</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-400">
+                      <Car size={10} className="text-white" />
+                    </span>
+                    <span className="text-[10px] text-gray-700 dark:text-gray-300">Parado / Desligado</span>
+                  </div>
 
-                {/* Equipes com veículos vinculados */}
-                {teams.filter((t) => teamVehicles[t.id]).length > 0 && (
-                  <>
-                    <div className="my-1.5 border-t border-gray-200 dark:border-gray-700" />
-                    <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">
-                      Equipes
-                    </p>
-                    {teams
-                      .filter((t) => teamVehicles[t.id])
-                      .map((team) => {
-                        const plate = teamVehicles[team.id];
-                        const vPos = filteredVehiclePositions.find((v) =>
-                          vehicleMatchesPlate(v.name, plate)
-                        );
-                        return (
-                          <div key={team.id} className="flex items-center gap-2">
-                            <span
-                              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full ring-2 ring-white dark:ring-gray-900"
-                              style={{ backgroundColor: team.color }}
-                            >
-                              <Car size={9} className="text-white" />
-                            </span>
-                            <div className="min-w-0">
-                              <p className="truncate text-[10px] font-medium text-gray-700 dark:text-gray-300">
-                                {team.name}
-                              </p>
-                              {vPos && (
-                                <p className={cn(
-                                  "text-[9px]",
-                                  vPos.ignition ? "text-green-600" : "text-gray-400"
-                                )}>
-                                  {plate} · {vPos.ignition ? "ligado" : "parado"}
+                  {/* Equipes com veículos vinculados */}
+                  {teams.filter((t) => teamVehicles[t.id]).length > 0 && (
+                    <>
+                      <div className="my-1.5 border-t border-gray-200 dark:border-gray-700" />
+                      <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">
+                        Equipes
+                      </p>
+                      {teams
+                        .filter((t) => teamVehicles[t.id])
+                        .map((team) => {
+                          const plate = teamVehicles[team.id];
+                          const vPos = filteredVehiclePositions.find((v) =>
+                            vehicleMatchesPlate(v.name, plate)
+                          );
+                          return (
+                            <div key={team.id} className="flex items-center gap-2">
+                              <span
+                                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full ring-2 ring-white dark:ring-gray-900"
+                                style={{ backgroundColor: team.color }}
+                              >
+                                <Car size={9} className="text-white" />
+                              </span>
+                              <div className="min-w-0">
+                                <p className="truncate text-[10px] font-medium text-gray-700 dark:text-gray-300">
+                                  {team.name}
                                 </p>
-                              )}
+                                {vPos && (
+                                  <p className={cn(
+                                    "text-[9px]",
+                                    vPos.ignition ? "text-green-600" : "text-gray-400"
+                                  )}>
+                                    {plate} · {vPos.ignition ? "ligado" : "parado"}
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                  </>
-                )}
-              </div>
+                          );
+                        })}
+                    </>
+                  )}
+                </div>
+              </div>}
             </div>
+
+            {/* ── Painel lateral TV (só em fullscreen) ─────────────────── */}
+            {isFullscreen && (
+              <div className="flex w-72 shrink-0 flex-col gap-2 overflow-y-auto">
+                <p className="shrink-0 px-1 text-xs font-bold uppercase tracking-widest text-muted">
+                  Equipes ({teams.length})
+                </p>
+                {teams.length === 0 && (
+                  <p className="text-xs text-muted/60">Nenhuma equipe cadastrada</p>
+                )}
+                {teams.map((team) => {
+                  const linkedPlate = teamVehicles[team.id];
+                  const linkedVehicle = linkedPlate
+                    ? vehiclePositions.find((v) => vehicleMatchesPlate(v.name, linkedPlate))
+                    : undefined;
+                  const members = getMembersForTeam(team.id);
+                  const canFly = !!linkedVehicle;
+                  return (
+                    <div
+                      key={team.id}
+                      onClick={() => {
+                        if (linkedVehicle) {
+                          setFlyToTarget({ lat: linkedVehicle.lat, lon: linkedVehicle.lon });
+                        }
+                      }}
+                      className={cn(
+                        "shrink-0 rounded-xl border border-card-border bg-card-bg p-3 transition-all",
+                        canFly ? "cursor-pointer hover:border-primary/50 hover:shadow-md" : ""
+                      )}
+                      title={canFly ? "Clique para centralizar no mapa" : undefined}
+                    >
+                      {/* Nome da equipe */}
+                      <div className="mb-2 flex items-center gap-2">
+                        <span
+                          className="h-3 w-3 shrink-0 rounded-full"
+                          style={{ backgroundColor: team.color }}
+                        />
+                        <p className="truncate text-sm font-bold text-foreground">{team.name}</p>
+                        {canFly && (
+                          <span className="ml-auto shrink-0 text-[9px] text-muted/50">📍</span>
+                        )}
+                      </div>
+
+                      {/* Veículo e status */}
+                      {linkedPlate ? (
+                        <>
+                          <p className={cn(
+                            "mb-1 text-xs font-semibold",
+                            linkedVehicle?.ignition === true
+                              ? "text-green-700"
+                              : linkedVehicle?.ignition === false
+                                ? "text-gray-500"
+                                : "text-muted"
+                          )}>
+                            🚗 {linkedPlate} —{" "}
+                            {linkedVehicle?.ignition === true
+                              ? "Ligado"
+                              : linkedVehicle?.ignition === false
+                                ? "Desligado"
+                                : "Sem posição"}
+                          </p>
+                          <p className="text-[10px] leading-snug text-muted">
+                            {linkedVehicle?.address || "Endereço não disponível"}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-xs text-muted/60">Sem veículo vinculado</p>
+                      )}
+
+                      {/* Membros */}
+                      {members.length > 0 && (
+                        <p className="mt-1.5 text-[10px] text-muted/70">
+                          {members.length} membro{members.length !== 1 ? "s" : ""} · {members.join(", ")}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>

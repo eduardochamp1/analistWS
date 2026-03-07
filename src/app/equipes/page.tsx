@@ -3,16 +3,19 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import {
-  UserPlus, Plus, Trash2, Pencil, X, Loader2,
-  Wifi, WifiOff, Clock, Wrench, ChevronDown, ChevronUp, UserRound,
+  UserPlus, Plus, Trash2, Pencil, X, Loader2, AlertTriangle,
+  UserRound, Car, Filter, RefreshCw, Maximize2, Minimize2, Clock, LocateFixed,
+  Wifi, WifiOff, Wrench,
 } from "lucide-react";
 import { teamColors } from "@/lib/teams-utils";
 import { cn } from "@/lib/utils";
-import { LocationSearch } from "@/components/location-search";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/contexts/ToastContext";
 import { useTeams, Team } from "@/hooks/useTeams";
 import { useEmployees, Employee } from "@/hooks/useEmployees";
+import { getEmpAlerts } from "@/hooks/useEmployees";
+import type { VehiclePosition } from "@/app/api/tracking/route";
+import type { PlatesResponse } from "@/app/api/plates/route";
 
 const TeamsMap = dynamic(
   () => import("@/components/teams-map").then((mod) => mod.TeamsMap),
@@ -26,15 +29,24 @@ const TeamsMap = dynamic(
   }
 );
 
+// ── Status do veículo derivado da ignição ─────────────────────────────────
+function getVehicleStatus(ignition: boolean | undefined): { label: string; color: string } {
+  if (ignition === true)  return { label: "Ligado / Em movimento", color: "bg-green-100 text-green-700" };
+  if (ignition === false) return { label: "Parado / Desligado",    color: "bg-gray-100 text-gray-500" };
+  return { label: "Sem posição", color: "bg-slate-100 text-slate-400" };
+}
+
+// ── Status da equipe ─────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  AVAILABLE: { label: "Disponível", color: "bg-green-100 text-green-700", icon: Wifi },
-  IN_SERVICE: { label: "Em serviço", color: "bg-amber-100 text-amber-700", icon: Wrench },
-  PAUSED: { label: "Pausado", color: "bg-blue-100 text-blue-700", icon: Clock },
-  OFFLINE: { label: "Offline", color: "bg-gray-100 text-gray-500", icon: WifiOff },
+  AVAILABLE:  { label: "Disponível",  color: "bg-green-100 text-green-700",  icon: Wifi },
+  IN_SERVICE: { label: "Em serviço",  color: "bg-amber-100 text-amber-700",  icon: Wrench },
+  PAUSED:     { label: "Pausado",     color: "bg-blue-100 text-blue-700",    icon: Clock },
+  OFFLINE:    { label: "Offline",     color: "bg-gray-100 text-gray-500",    icon: WifiOff },
 };
 
-// ── localStorage de membros ────────────────────────────────────────────────
-const MEMBERS_KEY = "engelmig-team-members";
+// ── localStorage de membros e veículos (CCM) ──────────────────────────────
+const MEMBERS_KEY  = "engelmig-team-members";       // compatível com dashboard
+const VEHICLES_KEY = "engelmig-ccm-team-vehicles";  // exclusivo CCM
 
 function loadTeamMembers(): Record<string, string[]> {
   try {
@@ -48,42 +60,151 @@ function saveTeamMembers(data: Record<string, string[]>) {
   localStorage.setItem(MEMBERS_KEY, JSON.stringify(data));
 }
 
+function loadTeamVehicles(): Record<string, string> {
+  try {
+    const s = localStorage.getItem(VEHICLES_KEY);
+    if (s) return JSON.parse(s) as Record<string, string>;
+  } catch { /* ignore */ }
+  return {};
+}
+
+function saveTeamVehicles(data: Record<string, string>) {
+  localStorage.setItem(VEHICLES_KEY, JSON.stringify(data));
+}
+
+function vehicleMatchesPlate(vehicleName: string, plate: string): boolean {
+  return vehicleName.toUpperCase().includes(plate.toUpperCase());
+}
+
 export { MEMBERS_KEY, loadTeamMembers };
 // ──────────────────────────────────────────────────────────────────────────
 
 
 export default function EquipesPage() {
   const { warning } = useToast();
-  const { teams, loading, createTeam, updateTeam, deleteTeam } = useTeams();
+  const { teams, loading, createTeam, updateTeam, deleteTeam, fetchTeams } = useTeams("CCM");
   const { employees } = useEmployees("CCM");
 
-  const [clickMode, setClickMode] = useState<"team" | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
   const [newTeamColor, setNewTeamColor] = useState(teamColors[0].value);
   const [newTeamMembers, setNewTeamMembers] = useState("3");
+  const [newTeamVehicle, setNewTeamVehicle] = useState("");
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [showDeleteAll, setShowDeleteAll] = useState(false);
   const [statusMenuId, setStatusMenuId] = useState<string | null>(null);
 
-  // Membros nomeados: Record<teamId, string[]>
   const [teamMembers, setTeamMembers] = useState<Record<string, string[]>>({});
-  // Qual equipe está com o painel de membros aberto
+  const [teamVehicles, setTeamVehicles] = useState<Record<string, string>>({});
   const [expandedMembersId, setExpandedMembersId] = useState<string | null>(null);
-  // Input de novo membro por equipe
   const [newMemberInputs, setNewMemberInputs] = useState<Record<string, string>>({});
-  // Qual dropdown de sugestões está aberto (teamId)
   const [dropdownOpenId, setDropdownOpenId] = useState<string | null>(null);
-  // Ref para fechar dropdown ao clicar fora
   const dropdownRef = useRef<Record<string, HTMLDivElement | null>>({});
 
+  // ── Rastreamento UEN 0123 ─────────────────────────────────────────────
+  const [uen0123Plates, setUen0123Plates] = useState<string[]>([]);
+  const [vehiclePositions, setVehiclePositions] = useState<VehiclePosition[]>([]);
+
+  // ── Filtros e controle de atualização do mapa ────────────────────────
+  const [filterPlate, setFilterPlate] = useState("");
+  const [filterTeam, setFilterTeam]   = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated]   = useState<Date | null>(null);
+  const [countdown, setCountdown]       = useState(30);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [currentTime, setCurrentTime]   = useState(new Date());
+  const [flyToTarget, setFlyToTarget]   = useState<{ lat: number; lon: number } | null>(null);
+  const [viewResetKey, setViewResetKey] = useState(0);
+
+  // Veículos filtrados para o mapa
+  const filteredVehiclePositions = useMemo(() => {
+    return vehiclePositions.filter((v) => {
+      if (filterPlate && !vehicleMatchesPlate(v.name, filterPlate)) return false;
+      if (filterTeam) {
+        const linkedPlate = teamVehicles[filterTeam];
+        if (!linkedPlate || !vehicleMatchesPlate(v.name, linkedPlate)) return false;
+      }
+      return true;
+    });
+  }, [vehiclePositions, filterPlate, filterTeam, teamVehicles]);
+
+  // ─────────────────────────────────────────────────────────────────────
+
+  // Carregar membros e veículos do localStorage
   useEffect(() => {
     setTeamMembers(loadTeamMembers());
+    setTeamVehicles(loadTeamVehicles());
   }, []);
 
-  // Todos os colaboradores conhecidos: funcionários importados + nomes já em equipes
+  // Buscar placas da UEN 0123 na planilha
+  useEffect(() => {
+    fetch("/api/plates")
+      .then((r) => r.json())
+      .then((data: PlatesResponse) => {
+        setUen0123Plates(data.byUen?.["0123"] ?? []);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Buscar posições dos veículos da UEN 0123
+  const fetchVehiclePositions = useCallback(async () => {
+    if (uen0123Plates.length === 0) return;
+    setIsRefreshing(true);
+    try {
+      const r = await fetch("/api/tracking");
+      if (!r.ok) return;
+      const all: VehiclePosition[] = await r.json();
+      const filtered = all.filter((v) =>
+        uen0123Plates.some((plate) => vehicleMatchesPlate(v.name, plate))
+      );
+      setVehiclePositions(filtered);
+      setLastUpdated(new Date());
+      setCountdown(30);
+    } catch { /* ignore */ }
+    finally { setIsRefreshing(false); }
+  }, [uen0123Plates]);
+
+  // Polling automático a cada 30s
+  useEffect(() => {
+    fetchVehiclePositions();
+    const interval = setInterval(fetchVehiclePositions, 30_000);
+    return () => clearInterval(interval);
+  }, [fetchVehiclePositions]);
+
+  // Contador regressivo de 30 → 0
+  useEffect(() => {
+    if (!lastUpdated) return;
+    const tick = setInterval(() => {
+      setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1_000);
+    return () => clearInterval(tick);
+  }, [lastUpdated]);
+
+  // Fechar fullscreen com Escape e re-calcular tamanho do mapa
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isFullscreen) setIsFullscreen(false);
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [isFullscreen]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => window.dispatchEvent(new Event("resize")), 150);
+    return () => clearTimeout(timer);
+  }, [isFullscreen]);
+
+  // Relógio em tempo real para o painel TV
+  useEffect(() => {
+    const tick = setInterval(() => setCurrentTime(new Date()), 1_000);
+    return () => clearInterval(tick);
+  }, []);
+
+  // ─────────────────────────────────────────────────────────────────────
+
   const allKnownCollaborators = useMemo((): Employee[] => {
     const map = new Map<string, Employee>();
     employees.forEach((e) => map.set(e.name, e));
@@ -92,6 +213,9 @@ export default function EquipesPage() {
     );
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }, [teamMembers, employees]);
+
+  const onCount  = vehiclePositions.filter((v) => v.ignition === true).length;
+  const offCount = vehiclePositions.filter((v) => v.ignition === false).length;
 
   const getMembersForTeam = (teamId: string): string[] =>
     teamMembers[teamId] ?? [];
@@ -117,32 +241,70 @@ export default function EquipesPage() {
     });
   }, []);
 
-  const addTeamAtLocation = useCallback(
-    async (lat: number, lon: number) => {
-      if (!newTeamName.trim()) { warning("Digite um nome para a equipe"); return; }
-      await createTeam({
-        name: newTeamName.trim(),
-        lat,
-        lon,
-        color: newTeamColor,
-        members: parseInt(newTeamMembers) || 3,
-        status: "AVAILABLE",
-      });
-      setNewTeamName("");
-      setNewTeamMembers("3");
-      setNewTeamColor(teamColors[0].value);
-      setClickMode(null);
-      setShowAddForm(false);
-    },
-    [newTeamName, newTeamColor, newTeamMembers, createTeam, warning]
-  );
+  const linkVehicle = useCallback((teamId: string, plate: string) => {
+    setTeamVehicles((prev) => {
+      const updated = plate
+        ? { ...prev, [teamId]: plate }
+        : (() => { const copy = { ...prev }; delete copy[teamId]; return copy; })();
+      saveTeamVehicles(updated);
+      return updated;
+    });
+  }, []);
 
-  const handleMapClick = useCallback(
-    (lat: number, lon: number) => {
-      if (clickMode === "team") addTeamAtLocation(lat, lon);
-    },
-    [clickMode, addTeamAtLocation]
-  );
+  const unlinkVehicle = useCallback((teamId: string) => {
+    setTeamVehicles((prev) => {
+      const updated = { ...prev };
+      delete updated[teamId];
+      saveTeamVehicles(updated);
+      return updated;
+    });
+  }, []);
+
+  // Criar equipe — posição inicial = veículo selecionado (ou centro ES)
+  const addTeam = useCallback(async () => {
+    if (!newTeamName.trim()) { warning("Digite um nome para a equipe"); return; }
+    const vehiclePos = newTeamVehicle
+      ? vehiclePositions.find((v) => vehicleMatchesPlate(v.name, newTeamVehicle))
+      : undefined;
+    const lat = vehiclePos?.lat ?? -20.3155;
+    const lon = vehiclePos?.lon ?? -40.3128;
+
+    const newTeam = await createTeam({
+      name: newTeamName.trim(),
+      lat,
+      lon,
+      color: newTeamColor,
+      members: parseInt(newTeamMembers) || 3,
+      status: "AVAILABLE",
+    });
+
+    if (newTeamVehicle && newTeam?.id) {
+      setTeamVehicles((prev) => {
+        const updated = { ...prev, [newTeam.id]: newTeamVehicle };
+        saveTeamVehicles(updated);
+        return updated;
+      });
+    }
+
+    setNewTeamName("");
+    setNewTeamMembers("3");
+    setNewTeamColor(teamColors[0].value);
+    setNewTeamVehicle("");
+    setShowAddForm(false);
+  }, [newTeamName, newTeamColor, newTeamMembers, newTeamVehicle, vehiclePositions, createTeam, warning]);
+
+  // Excluir todas as equipes CCM e limpar localStorage
+  const deleteAllTeams = async () => {
+    await Promise.all(
+      teams.map((t) => fetch(`/api/teams/${t.id}`, { method: "DELETE" }).catch(() => {}))
+    );
+    setTeamMembers({});
+    saveTeamMembers({});
+    setTeamVehicles({});
+    saveTeamVehicles({});
+    setShowDeleteAll(false);
+    fetchTeams();
+  };
 
   const startEdit = (team: Team) => { setEditingId(team.id); setEditName(team.name); };
   const confirmEdit = async () => {
@@ -165,6 +327,12 @@ export default function EquipesPage() {
       saveTeamMembers(updated);
       return updated;
     });
+    setTeamVehicles((prev) => {
+      const updated = { ...prev };
+      delete updated[id];
+      saveTeamVehicles(updated);
+      return updated;
+    });
     await deleteTeam(id);
     setDeleteConfirmId(null);
   };
@@ -182,14 +350,32 @@ export default function EquipesPage() {
         onConfirm={() => deleteConfirmId && removeTeam(deleteConfirmId)}
         onCancel={() => setDeleteConfirmId(null)}
       />
+      <ConfirmDialog
+        open={showDeleteAll}
+        title="Limpar histórico"
+        message="Isso excluirá TODAS as equipes CCM e limpará o histórico local. Deseja continuar?"
+        confirmLabel="Limpar tudo"
+        variant="danger"
+        onConfirm={deleteAllTeams}
+        onCancel={() => setShowDeleteAll(false)}
+      />
 
       {/* Header */}
-      <div className="mb-6 flex items-center gap-3">
-        <UserPlus size={28} className="text-accent" />
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Equipes</h1>
-          <p className="text-sm text-muted">Cadastre e gerencie as equipes de campo</p>
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <UserPlus size={28} className="text-accent" />
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Equipes CCM</h1>
+            <p className="text-sm text-muted">Cadastre e gerencie as equipes de campo CCM</p>
+          </div>
         </div>
+        <button
+          onClick={() => setShowDeleteAll(true)}
+          className="flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-100"
+          title="Excluir todas as equipes e limpar histórico"
+        >
+          <Trash2 size={13} /> Limpar histórico
+        </button>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[400px_1fr]">
@@ -203,7 +389,7 @@ export default function EquipesPage() {
                 Equipes ({teams.length})
               </h3>
               <button
-                onClick={() => { setShowAddForm(!showAddForm); setClickMode(null); }}
+                onClick={() => setShowAddForm(!showAddForm)}
                 className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-hover"
                 disabled={loading}
               >
@@ -217,7 +403,7 @@ export default function EquipesPage() {
                 <div className="mb-2 flex items-center justify-between">
                   <p className="text-xs font-semibold text-primary">Nova Equipe</p>
                   <button
-                    onClick={() => { setShowAddForm(false); setClickMode(null); }}
+                    onClick={() => setShowAddForm(false)}
                     className="text-muted hover:text-foreground"
                   >
                     <X size={14} />
@@ -228,6 +414,7 @@ export default function EquipesPage() {
                   type="text"
                   value={newTeamName}
                   onChange={(e) => setNewTeamName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addTeam()}
                   placeholder="Nome da equipe..."
                   className="mb-2 w-full rounded-md border border-card-border bg-card-bg px-3 py-2 text-sm outline-none focus:border-primary"
                 />
@@ -252,7 +439,7 @@ export default function EquipesPage() {
                   </div>
                 </div>
 
-                <div className="mb-3 flex items-center gap-2">
+                <div className="mb-2 flex items-center gap-2">
                   <span className="text-xs text-muted">Membros:</span>
                   <input
                     type="number"
@@ -264,14 +451,34 @@ export default function EquipesPage() {
                   />
                 </div>
 
-                <p className="mb-1.5 text-xs font-medium text-muted">Posicionar por:</p>
-                <LocationSearch
-                  onSelect={(lat, lon) => addTeamAtLocation(lat, lon)}
-                  onMapClick={() => setClickMode(clickMode === "team" ? null : "team")}
-                  clickModeActive={clickMode === "team"}
+                {/* Seletor de veículo UEN 0123 */}
+                <div className="mb-3 flex items-center gap-2">
+                  <Car size={13} className="shrink-0 text-muted" />
+                  <span className="text-xs text-muted">Veículo (UEN 0123):</span>
+                  <select
+                    value={newTeamVehicle}
+                    onChange={(e) => setNewTeamVehicle(e.target.value)}
+                    className="flex-1 rounded-md border border-card-border bg-card-bg px-2 py-1 text-xs outline-none focus:border-primary"
+                  >
+                    <option value="">— sem veículo —</option>
+                    {uen0123Plates.map((plate) => {
+                      const pos = vehiclePositions.find((v) => vehicleMatchesPlate(v.name, plate));
+                      return (
+                        <option key={plate} value={plate}>
+                          {plate}{pos ? (pos.ignition ? " 🟢" : " ⚫") : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                <button
+                  onClick={addTeam}
                   disabled={!newTeamName.trim()}
-                  mapLabel="Fixar no mapa"
-                />
+                  className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-40"
+                >
+                  Criar Equipe
+                </button>
               </div>
             )}
 
@@ -287,23 +494,28 @@ export default function EquipesPage() {
             ) : (
               <div className="space-y-2">
                 {teams.map((team) => {
-                  const cfg = STATUS_CONFIG[team.status ?? "AVAILABLE"] ?? STATUS_CONFIG.AVAILABLE;
-                  const StatusIcon = cfg.icon;
                   const members = getMembersForTeam(team.id);
                   const membersExpanded = expandedMembersId === team.id;
+                  const linkedPlate = teamVehicles[team.id];
+                  const linkedVehicle = linkedPlate
+                    ? vehiclePositions.find((v) => vehicleMatchesPlate(v.name, linkedPlate))
+                    : undefined;
+                  const cfg = STATUS_CONFIG[team.status ?? "AVAILABLE"] ?? STATUS_CONFIG.AVAILABLE;
+                  const StatusIcon = cfg.icon;
 
                   return (
                     <div
                       key={team.id}
                       className="rounded-lg border border-card-border bg-background"
                     >
-                      {/* Linha principal */}
-                      <div className="flex items-center gap-2 px-3 py-2.5">
+                      {/* ── Linha principal: dot | nome | status | select | botões ── */}
+                      <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
                         <div
                           className="h-4 w-4 shrink-0 rounded-full"
                           style={{ backgroundColor: team.color }}
                         />
 
+                        {/* Nome (modo edição ou exibição) */}
                         <div className="min-w-0 flex-1">
                           {editingId === team.id ? (
                             <div className="flex gap-1">
@@ -324,13 +536,10 @@ export default function EquipesPage() {
                           ) : (
                             <p className="truncate text-sm font-medium text-foreground">{team.name}</p>
                           )}
-                          <p className="text-xs text-muted">
-                            {members.length} membro{members.length !== 1 ? "s" : ""}
-                          </p>
                         </div>
 
                         {/* Status badge com menu */}
-                        <div className="relative">
+                        <div className="relative shrink-0">
                           <button
                             onClick={() => setStatusMenuId(statusMenuId === team.id ? null : team.id)}
                             className={cn(
@@ -342,7 +551,6 @@ export default function EquipesPage() {
                             <StatusIcon size={10} />
                             {cfg.label}
                           </button>
-
                           {statusMenuId === team.id && (
                             <>
                               <div className="fixed inset-0 z-10" onClick={() => setStatusMenuId(null)} />
@@ -368,6 +576,24 @@ export default function EquipesPage() {
                           )}
                         </div>
 
+                        {/* Select rápido de veículo */}
+                        <select
+                          value={teamVehicles[team.id] ?? ""}
+                          onChange={(e) => linkVehicle(team.id, e.target.value)}
+                          className="shrink-0 cursor-pointer rounded p-1 text-[10px] text-muted outline-none hover:text-primary focus:text-primary"
+                          title="Vincular veículo (UEN 0123)"
+                        >
+                          <option value="">🚗</option>
+                          {uen0123Plates.map((plate) => {
+                            const pos = vehiclePositions.find((v) => vehicleMatchesPlate(v.name, plate));
+                            return (
+                              <option key={plate} value={plate}>
+                                {plate}{pos ? (pos.ignition ? " 🟢" : " ⚫") : ""}
+                              </option>
+                            );
+                          })}
+                        </select>
+
                         {/* Botão membros */}
                         <button
                           onClick={() => setExpandedMembersId(membersExpanded ? null : team.id)}
@@ -388,6 +614,74 @@ export default function EquipesPage() {
                         </button>
                       </div>
 
+                      {/* ── Segunda linha: membros + chip de veículo ──────────── */}
+                      <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2 pl-9">
+                        <p className="text-xs text-muted">
+                          {members.length} membro{members.length !== 1 ? "s" : ""}
+                        </p>
+                        {linkedPlate && (
+                          <span
+                            className={cn(
+                              "flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-medium",
+                              linkedVehicle
+                                ? linkedVehicle.ignition
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-gray-100 text-gray-500"
+                                : "bg-blue-100 text-blue-600"
+                            )}
+                          >
+                            <Car size={8} className="shrink-0" />
+                            {linkedPlate}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); unlinkVehicle(team.id); }}
+                              className="ml-0.5 hover:text-red-500"
+                              title="Desvincular veículo"
+                            >
+                              <X size={8} />
+                            </button>
+                          </span>
+                        )}
+                      </div>
+
+                      {/* ── Alertas de membros sempre visíveis ──────────────── */}
+                      {(() => {
+                        const membersWithAlerts = members
+                          .map((name) => {
+                            const emp = employees.find((e) => e.name === name) ?? allKnownCollaborators.find((e) => e.name === name);
+                            const alerts = emp ? getEmpAlerts(emp) : [];
+                            return { name, alerts };
+                          })
+                          .filter(({ alerts }) => alerts.length > 0);
+
+                        if (membersWithAlerts.length === 0) return null;
+
+                        return (
+                          <div className="border-t border-card-border/60 px-3 pb-2 pt-1.5">
+                            <p className="mb-1.5 text-[9px] font-semibold uppercase tracking-wide text-muted/70">
+                              Alertas de membros
+                            </p>
+                            <div className="flex flex-col gap-1.5">
+                              {membersWithAlerts.map(({ name, alerts }) => (
+                                <div key={name} className="flex flex-col gap-0.5">
+                                  <span className="text-[10px] font-semibold text-foreground/80">{name}</span>
+                                  {alerts.map((a, ai) => (
+                                    <span key={ai} className={cn(
+                                      "flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-medium",
+                                      a.type === "error"   ? "bg-red-100 text-red-700" :
+                                      a.type === "warning" ? "bg-amber-100 text-amber-700" :
+                                                             "bg-blue-100 text-blue-700"
+                                    )}>
+                                      <AlertTriangle size={8} className="shrink-0" />
+                                      {a.msg}
+                                    </span>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       {/* Painel de membros (expansível) */}
                       {membersExpanded && (
                         <div className="border-t border-card-border px-3 pb-3 pt-2">
@@ -395,30 +689,47 @@ export default function EquipesPage() {
                             Composição padrão
                           </p>
 
-                          {/* Lista de membros */}
                           {members.length === 0 ? (
                             <p className="mb-2 text-xs text-muted/60">Nenhum membro cadastrado</p>
                           ) : (
-                            <div className="mb-2 flex flex-wrap gap-1.5">
+                            <div className="mb-2 flex flex-col gap-1.5">
                               {members.map((name) => {
-                                const emp = allKnownCollaborators.find((e) => e.name === name);
+                                const emp = employees.find((e) => e.name === name) ?? allKnownCollaborators.find((e) => e.name === name);
+                                const empAlerts = emp ? getEmpAlerts(emp) : [];
                                 return (
                                   <span
                                     key={name}
-                                    className="flex min-w-0 max-w-[200px] items-center gap-1.5 rounded-md border border-card-border bg-card-bg px-2 py-1 text-xs"
+                                    className="flex min-w-0 flex-col rounded-md border border-card-border bg-card-bg px-2 py-1.5 text-xs"
                                   >
-                                    <span className="flex min-w-0 flex-col leading-tight">
-                                      <span className="truncate font-medium text-foreground">{name}</span>
-                                      {emp?.role && (
-                                        <span className="truncate text-[10px] text-muted/70">{emp.role}</span>
-                                      )}
+                                    <span className="flex items-start gap-1.5">
+                                      <span className="flex min-w-0 flex-1 flex-col leading-tight">
+                                        <span className="truncate font-medium text-foreground">{name}</span>
+                                        {emp?.role && (
+                                          <span className="truncate text-[10px] text-muted/70">{emp.role}</span>
+                                        )}
+                                      </span>
+                                      <button
+                                        onClick={() => removeMember(team.id, name)}
+                                        className="mt-0.5 shrink-0 text-muted/50 hover:text-red-500"
+                                      >
+                                        <X size={10} />
+                                      </button>
                                     </span>
-                                    <button
-                                      onClick={() => removeMember(team.id, name)}
-                                      className="shrink-0 text-muted/50 hover:text-red-500"
-                                    >
-                                      <X size={10} />
-                                    </button>
+                                    {empAlerts.length > 0 && (
+                                      <span className="mt-1.5 flex flex-col gap-0.5">
+                                        {empAlerts.map((a, ai) => (
+                                          <span key={ai} className={cn(
+                                            "flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-medium",
+                                            a.type === "error"   ? "bg-red-100 text-red-700" :
+                                            a.type === "warning" ? "bg-amber-100 text-amber-700" :
+                                                                   "bg-blue-100 text-blue-700"
+                                          )}>
+                                            <AlertTriangle size={8} className="shrink-0" />
+                                            {a.msg}
+                                          </span>
+                                        ))}
+                                      </span>
+                                    )}
                                   </span>
                                 );
                               })}
@@ -509,44 +820,350 @@ export default function EquipesPage() {
             )}
           </div>
 
-          {/* Legenda de status */}
+          {/* Legenda de status do veículo */}
           <div className="rounded-xl border border-card-border bg-card-bg p-4">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Legenda de Status</p>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Status do Veículo</p>
             <div className="space-y-1.5">
-              {Object.entries(STATUS_CONFIG).map(([key, val]) => {
-                const Icon = val.icon;
-                return (
-                  <div key={key} className="flex items-center gap-2">
-                    <span className={cn("flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold", val.color)}>
-                      <Icon size={10} /> {val.label}
-                    </span>
-                    <span className="text-xs text-muted">
-                      {key === "AVAILABLE" && "Equipe pronta para atendimento"}
-                      {key === "IN_SERVICE" && "Equipe em atendimento ativo"}
-                      {key === "PAUSED" && "Equipe temporariamente pausada"}
-                      {key === "OFFLINE" && "Equipe fora de operação"}
-                    </span>
-                  </div>
-                );
-              })}
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
+                  <Car size={10} /> Ligado / Em movimento
+                </span>
+                <span className="text-xs text-muted">Ignição ligada</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500">
+                  <Car size={10} /> Parado / Desligado
+                </span>
+                <span className="text-xs text-muted">Ignição desligada</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Mapa */}
-        <div className="relative h-[500px] overflow-hidden rounded-xl border border-card-border lg:h-auto lg:min-h-[600px]">
-          {clickMode === "team" && (
-            <div className="absolute left-1/2 top-4 z-[1000] -translate-x-1/2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background shadow-lg">
-              Clique para posicionar &quot;{newTeamName}&quot;
+          {/* Contador veículos UEN 0123 */}
+          {vehiclePositions.length > 0 && (
+            <div className="rounded-xl border border-card-border bg-card-bg p-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                Veículos UEN 0123 ({vehiclePositions.length})
+              </p>
+              <div className="flex gap-4 text-[11px]">
+                <span className="flex items-center gap-1.5 text-green-700">
+                  <span className="h-2 w-2 rounded-full bg-green-500" />
+                  Ligados: {vehiclePositions.filter((v) => v.ignition).length}
+                </span>
+                <span className="flex items-center gap-1.5 text-gray-500">
+                  <span className="h-2 w-2 rounded-full bg-gray-400" />
+                  Desligados: {vehiclePositions.filter((v) => !v.ignition).length}
+                </span>
+              </div>
             </div>
           )}
-          <TeamsMap
-            teams={teams}
-            emergencyData={[]}
-            highlightedTeamIds={new Set()}
-            onMapClick={handleMapClick}
-            clickMode={clickMode}
-          />
+        </div>
+
+        {/* ── Painel do Mapa (suporta tela cheia) ────────────────────────── */}
+        <div
+          className={cn(
+            "flex flex-col gap-2",
+            isFullscreen && "fixed inset-0 z-[9999] bg-background p-3"
+          )}
+        >
+          {/* ── Barra de métricas TV (só em fullscreen) ─────────────────── */}
+          {isFullscreen && (
+            <div className="flex shrink-0 items-center gap-4 rounded-lg border border-card-border bg-card-bg px-4 py-2">
+              <Clock size={16} className="shrink-0 text-primary" />
+              <span className="font-mono text-xl font-bold text-foreground">
+                {currentTime.toLocaleTimeString("pt-BR")}
+              </span>
+              <span className="h-5 w-px bg-card-border" />
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-green-700">
+                <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
+                {onCount} ligado{onCount !== 1 ? "s" : ""}
+              </span>
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-gray-500">
+                <span className="h-2.5 w-2.5 rounded-full bg-gray-400" />
+                {offCount} desligado{offCount !== 1 ? "s" : ""}
+              </span>
+              {lastUpdated && (
+                <>
+                  <span className="h-5 w-px bg-card-border" />
+                  <span className="flex items-center gap-1.5 text-xs text-muted">
+                    <span className={cn(
+                      "h-2 w-2 rounded-full",
+                      countdown > 10 ? "bg-green-500" : countdown > 5 ? "bg-amber-400" : "bg-red-400 animate-pulse"
+                    )} />
+                    Atualiza em {countdown}s
+                  </span>
+                  <span className="ml-auto text-[11px] text-muted/70">
+                    Última: {lastUpdated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Barra de filtros + controles */}
+          <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border border-card-border bg-card-bg px-3 py-2">
+            <Filter size={13} className="shrink-0 text-muted" />
+            <span className="text-xs font-medium text-muted">Filtrar:</span>
+
+            <select
+              value={filterPlate}
+              onChange={(e) => setFilterPlate(e.target.value)}
+              className="rounded-md border border-card-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
+            >
+              <option value="">Todas as placas</option>
+              {uen0123Plates.map((plate) => (
+                <option key={plate} value={plate}>{plate}</option>
+              ))}
+            </select>
+
+            <select
+              value={filterTeam}
+              onChange={(e) => setFilterTeam(e.target.value)}
+              className="rounded-md border border-card-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
+            >
+              <option value="">Todas as equipes</option>
+              {teams.map((team) => (
+                <option key={team.id} value={team.id}>{team.name}</option>
+              ))}
+            </select>
+
+            {(filterPlate || filterTeam) && (
+              <button
+                onClick={() => { setFilterPlate(""); setFilterTeam(""); }}
+                className="flex items-center gap-1 rounded-md bg-muted/20 px-2 py-1 text-[11px] text-muted hover:bg-muted/30"
+              >
+                <X size={10} /> Limpar filtros
+              </button>
+            )}
+
+            {/* Botão de reset de visão — aparece quando uma equipe está focada */}
+            {flyToTarget && (
+              <button
+                onClick={() => { setFlyToTarget(null); setViewResetKey((k) => k + 1); }}
+                className="flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary hover:bg-primary/20"
+                title="Voltar para visão geral"
+              >
+                <LocateFixed size={11} /> Ver todos
+              </button>
+            )}
+
+            <span className="ml-auto flex items-center gap-2">
+              {/* Contador regressivo */}
+              {!isFullscreen && lastUpdated && (
+                <span className="flex items-center gap-1 text-[10px] text-muted">
+                  <span
+                    className={cn(
+                      "inline-block h-1.5 w-1.5 rounded-full",
+                      countdown > 10 ? "bg-green-500" : countdown > 5 ? "bg-amber-400" : "bg-red-400 animate-pulse"
+                    )}
+                  />
+                  Atualiza em {countdown}s
+                </span>
+              )}
+
+              {/* Última atualização */}
+              {!isFullscreen && lastUpdated && (
+                <span className="text-[10px] text-muted/70">
+                  Última: {lastUpdated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                </span>
+              )}
+
+              {/* Refresh manual */}
+              <button
+                onClick={fetchVehiclePositions}
+                disabled={isRefreshing || uen0123Plates.length === 0}
+                className="flex items-center gap-1 rounded-md border border-card-border bg-background px-2 py-1 text-[11px] text-muted transition-colors hover:border-primary hover:text-primary disabled:opacity-40"
+                title="Atualizar agora"
+              >
+                <RefreshCw size={11} className={cn(isRefreshing && "animate-spin")} />
+                {isRefreshing ? "Atualizando..." : "Atualizar"}
+              </button>
+
+              <span className="text-[10px] text-muted">
+                {filteredVehiclePositions.length} veículo{filteredVehiclePositions.length !== 1 ? "s" : ""}
+              </span>
+
+              {/* Botão tela cheia */}
+              <button
+                onClick={() => setIsFullscreen(!isFullscreen)}
+                className="flex items-center gap-1 rounded-md border border-card-border bg-background px-2 py-1 text-[11px] text-muted transition-colors hover:border-primary hover:text-primary"
+                title={isFullscreen ? "Sair da tela cheia (Esc)" : "Expandir para tela cheia"}
+              >
+                {isFullscreen
+                  ? <><Minimize2 size={12} /> Sair</>
+                  : <><Maximize2 size={12} /> Tela cheia</>
+                }
+              </button>
+            </span>
+          </div>
+
+          {/* Área principal: mapa + painel lateral TV */}
+          <div className={cn("flex gap-2", isFullscreen ? "min-h-0 flex-1" : "")}>
+            {/* Mapa com legenda flutuante */}
+            <div
+              className={cn(
+                "relative min-w-0 flex-1 overflow-hidden rounded-xl border border-card-border",
+                isFullscreen ? "min-h-0" : ""
+              )}
+              style={{ height: isFullscreen ? undefined : "560px" }}
+            >
+              <TeamsMap
+                teams={[]}
+                emergencyData={[]}
+                highlightedTeamIds={new Set()}
+                onMapClick={() => {}}
+                clickMode={null}
+                vehiclePositions={filteredVehiclePositions}
+                teamVehicles={teamVehicles}
+                flyTo={flyToTarget}
+                viewResetKey={viewResetKey}
+              />
+
+              {/* Legenda flutuante no canto inferior esquerdo (oculta em fullscreen) */}
+              {!isFullscreen && (
+                <div className="absolute bottom-6 left-3 z-[1000] min-w-[160px] rounded-xl border border-white/20 bg-white/90 p-3 shadow-lg backdrop-blur-sm dark:bg-gray-900/90">
+                  <p className="mb-2 text-[9px] font-bold uppercase tracking-widest text-gray-500">
+                    Legenda
+                  </p>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-500">
+                        <Car size={10} className="text-white" />
+                      </span>
+                      <span className="text-[10px] text-gray-700 dark:text-gray-300">Ligado / Em movimento</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-400">
+                        <Car size={10} className="text-white" />
+                      </span>
+                      <span className="text-[10px] text-gray-700 dark:text-gray-300">Parado / Desligado</span>
+                    </div>
+
+                    {/* Equipes com veículos vinculados */}
+                    {teams.filter((t) => teamVehicles[t.id]).length > 0 && (
+                      <>
+                        <div className="my-1.5 border-t border-gray-200 dark:border-gray-700" />
+                        <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">
+                          Equipes
+                        </p>
+                        {teams
+                          .filter((t) => teamVehicles[t.id])
+                          .map((team) => {
+                            const plate = teamVehicles[team.id];
+                            const vPos = filteredVehiclePositions.find((v) =>
+                              vehicleMatchesPlate(v.name, plate)
+                            );
+                            return (
+                              <div key={team.id} className="flex items-center gap-2">
+                                <span
+                                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full ring-2 ring-white dark:ring-gray-900"
+                                  style={{ backgroundColor: team.color }}
+                                >
+                                  <Car size={9} className="text-white" />
+                                </span>
+                                <div className="min-w-0">
+                                  <p className="truncate text-[10px] font-medium text-gray-700 dark:text-gray-300">
+                                    {team.name}
+                                  </p>
+                                  {vPos && (
+                                    <p className={cn(
+                                      "text-[9px]",
+                                      vPos.ignition ? "text-green-600" : "text-gray-400"
+                                    )}>
+                                      {plate} · {vPos.ignition ? "ligado" : "parado"}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Painel lateral TV (só em fullscreen) ─────────────────── */}
+            {isFullscreen && (
+              <div className="flex w-72 shrink-0 flex-col gap-2 overflow-y-auto">
+                <p className="shrink-0 px-1 text-xs font-bold uppercase tracking-widest text-muted">
+                  Equipes ({teams.length})
+                </p>
+                {teams.length === 0 && (
+                  <p className="text-xs text-muted/60">Nenhuma equipe cadastrada</p>
+                )}
+                {teams.map((team) => {
+                  const linkedPlate = teamVehicles[team.id];
+                  const linkedVehicle = linkedPlate
+                    ? vehiclePositions.find((v) => vehicleMatchesPlate(v.name, linkedPlate))
+                    : undefined;
+                  const members = getMembersForTeam(team.id);
+                  const canFly = !!linkedVehicle;
+                  return (
+                    <div
+                      key={team.id}
+                      onClick={() => {
+                        if (linkedVehicle) {
+                          setFlyToTarget({ lat: linkedVehicle.lat, lon: linkedVehicle.lon });
+                        }
+                      }}
+                      className={cn(
+                        "shrink-0 rounded-xl border border-card-border bg-card-bg p-3 transition-all",
+                        canFly ? "cursor-pointer hover:border-primary/50 hover:shadow-md" : ""
+                      )}
+                      title={canFly ? "Clique para centralizar no mapa" : undefined}
+                    >
+                      {/* Nome da equipe */}
+                      <div className="mb-2 flex items-center gap-2">
+                        <span
+                          className="h-3 w-3 shrink-0 rounded-full"
+                          style={{ backgroundColor: team.color }}
+                        />
+                        <p className="truncate text-sm font-bold text-foreground">{team.name}</p>
+                        {canFly && (
+                          <span className="ml-auto shrink-0 text-[9px] text-muted/50">📍</span>
+                        )}
+                      </div>
+
+                      {/* Veículo e status */}
+                      {linkedPlate ? (
+                        <>
+                          <p className={cn(
+                            "mb-1 text-xs font-semibold",
+                            linkedVehicle?.ignition === true
+                              ? "text-green-700"
+                              : linkedVehicle?.ignition === false
+                                ? "text-gray-500"
+                                : "text-muted"
+                          )}>
+                            🚗 {linkedPlate} —{" "}
+                            {linkedVehicle?.ignition === true
+                              ? "Ligado"
+                              : linkedVehicle?.ignition === false
+                                ? "Desligado"
+                                : "Sem posição"}
+                          </p>
+                          <p className="text-[10px] leading-snug text-muted">
+                            {linkedVehicle?.address || "Endereço não disponível"}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-xs text-muted/60">Sem veículo vinculado</p>
+                      )}
+
+                      {/* Membros */}
+                      {members.length > 0 && (
+                        <p className="mt-1.5 text-[10px] text-muted/70">
+                          {members.length} membro{members.length !== 1 ? "s" : ""} · {members.join(", ")}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

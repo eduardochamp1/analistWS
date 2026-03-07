@@ -72,30 +72,39 @@ function createEmergencyIcon(index: number): L.DivIcon {
   });
 }
 
-function createVehicleIcon(ignition: boolean, teamColor?: string): L.DivIcon {
+function createVehicleIcon(ignition: boolean, teamColor?: string, teamName?: string): L.DivIcon {
   const size = 34;
   const bg = ignition ? "#16a34a" : "#6b7280";
   const ring = teamColor
     ? `box-shadow: 0 0 0 3px ${teamColor}, 0 3px 8px rgba(0,0,0,0.35);`
     : "box-shadow: 0 2px 6px rgba(0,0,0,0.3);";
+  const safeName = teamName
+    ? teamName.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    : "";
+  const label = safeName
+    ? `<div style="position:absolute;top:${size + 3}px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.72);color:#fff;font-size:9px;font-weight:700;font-family:system-ui,sans-serif;white-space:nowrap;padding:1px 5px;border-radius:4px;pointer-events:none;letter-spacing:0.3px;">${safeName}</div>`
+    : "";
   return new L.DivIcon({
     className: "custom-vehicle-marker",
-    html: `<div style="
-      width: ${size}px;
-      height: ${size}px;
-      background: ${bg};
-      border: 2px solid #fff;
-      border-radius: 50%;
-      ${ring}
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    ">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="0.5">
-        <path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.5L6 4h12l1.5 3H21a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2M5 17v2h2v-2M17 17v2h2v-2M5 17h14"/>
-        <circle cx="7.5" cy="17" r="1.5" fill="white"/>
-        <circle cx="16.5" cy="17" r="1.5" fill="white"/>
-      </svg>
+    html: `<div style="position:relative;width:${size}px;height:${size}px;overflow:visible;">
+      <div style="
+        width: ${size}px;
+        height: ${size}px;
+        background: ${bg};
+        border: 2px solid #fff;
+        border-radius: 50%;
+        ${ring}
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      ">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="0.5">
+          <path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.5L6 4h12l1.5 3H21a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2M5 17v2h2v-2M17 17v2h2v-2M5 17h14"/>
+          <circle cx="7.5" cy="17" r="1.5" fill="white"/>
+          <circle cx="16.5" cy="17" r="1.5" fill="white"/>
+        </svg>
+      </div>
+      ${label}
     </div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
@@ -147,6 +156,35 @@ function FitBounds({
   return null;
 }
 
+// Voa suavemente para uma posição quando flyTo muda
+function FlyToController({ flyTo }: { flyTo: { lat: number; lon: number } | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (flyTo) {
+      map.flyTo([flyTo.lat, flyTo.lon], 16, { duration: 1.2 });
+    }
+  }, [flyTo, map]);
+  return null;
+}
+
+// Volta para a visão geral de todos os veículos
+function ViewResetController({ resetKey, vehicles }: { resetKey: number; vehicles: VehiclePosition[] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (resetKey === 0) return;
+    const points = vehicles.map((v) => L.latLng(v.lat, v.lon));
+    if (points.length > 1) {
+      map.flyToBounds(L.latLngBounds(points), { padding: [60, 60], duration: 1.2 });
+    } else if (points.length === 1) {
+      map.flyTo(points[0], 10, { duration: 1.2 });
+    } else {
+      map.flyTo([-20.3155, -40.3128], 8, { duration: 1.2 });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetKey]);
+  return null;
+}
+
 interface TeamsMapProps {
   teams: Team[];
   emergencyData: EmergencyDisplayData[];
@@ -155,6 +193,8 @@ interface TeamsMapProps {
   clickMode: "team" | "emergency" | null;
   vehiclePositions?: VehiclePosition[];
   teamVehicles?: Record<string, string>; // teamId → plate (vehicle name)
+  flyTo?: { lat: number; lon: number } | null;
+  viewResetKey?: number;
 }
 
 // Verifica se o nome do veículo contém a placa (matching flexível)
@@ -170,6 +210,8 @@ export function TeamsMap({
   clickMode,
   vehiclePositions = [],
   teamVehicles = {},
+  flyTo = null,
+  viewResetKey = 0,
 }: TeamsMapProps) {
   const teamMarkers = useMemo(
     () =>
@@ -215,7 +257,7 @@ export function TeamsMap({
         return {
           vehicle: v,
           linkedTeam,
-          icon: createVehicleIcon(v.ignition, linkedTeam?.color),
+          icon: createVehicleIcon(v.ignition, linkedTeam?.color, linkedTeam?.name),
         };
       }),
     [vehiclePositions, nameToTeam]
@@ -252,6 +294,8 @@ export function TeamsMap({
         />
 
         <ClickHandler onMapClick={onMapClick} enabled={clickMode !== null} />
+        <FlyToController flyTo={flyTo} />
+        <ViewResetController resetKey={viewResetKey} vehicles={vehiclePositions} />
         <FitBounds teams={teams} emergencies={emergencyData} vehicles={vehiclePositions} />
 
         {/* Marcadores de equipes */}
