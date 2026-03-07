@@ -6,10 +6,11 @@
  * retorna somente as UENs autorizadas.
  *
  * Estrutura da planilha FROTA.xlsx:
- *   Coluna D (SETOR)  → COP 6 dígitos, ex: "010604 - ES LEITURA CENTRO CARIACICA"
- *                        LEFT(4) = código UEN, ex: "0106"
- *   Coluna G (COP)    → Placa do veículo, ex: "TOP-0B64"
- *   Coluna W (sem nome fixo) → "0106 - ES LEITURA CENTRO" → nome da UEN
+ *   Coluna E (fórmula) → código UEN de 4 dígitos, ex: "0106"
+ *   Coluna H (PLACA)   → identificador do veículo no sistema de rastreamento
+ *   Coluna W           → "0106 - ES LEITURA CENTRO" → nome da UEN
+ *
+ * Índices 0-based: A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7, W=22
  *
  * Fluxo de autenticação SharePoint (link de compartilhamento):
  *   1. Requisição à URL de sharing → 302 + cookie FedAuth
@@ -25,8 +26,10 @@ const ALLOWED_UENS = new Set([
   "0120", "0121", "0123", "0124", "0136",
 ]);
 
-// Formato de placa brasileiro (antigo AAA-1234 ou Mercosul AAA-1A23)
-const PLATE_REGEX = /^[A-Z]{3}-?\d[A-Z0-9]\d{2}$/i;
+// Índices de coluna (0-based, A=0)
+const COL_UEN      = 4;  // E — fórmula que retorna o código UEN de 4 dígitos
+const COL_PLACA    = 7;  // H — identificador do veículo (PLACA)
+const COL_UEN_NAME = 22; // W — "0106 - ES LEITURA CENTRO"
 
 const SHARING_URL = process.env.PLATES_SHAREPOINT_URL ?? "";
 
@@ -98,8 +101,8 @@ export async function GET() {
     const wb = XLSX.read(buffer, { type: "array" });
     const ws = wb.Sheets[wb.SheetNames[0]];
 
-    // Lê como arrays para acessar por índice de coluna
-    // A=0, B=1, C=2, D=3(SETOR), E=4, F=5, G=6(COP/PLACA), W=22(nome UEN)
+    // Lê como arrays para acessar por índice de coluna (0-based)
+    // E=4(UEN), H=7(PLACA), W=22(nome UEN)
     const rawRows = XLSX.utils.sheet_to_json<unknown[]>(ws, {
       header: 1,
       defval: "",
@@ -109,41 +112,28 @@ export async function GET() {
       return NextResponse.json({ byUen: {}, uenNames: {}, uens: [], totalPlates: 0 });
     }
 
-    // Encontra os índices das colunas pelos cabeçalhos da linha 1
-    const headers = (rawRows[0] as unknown[]).map((h) => String(h ?? ""));
-    const setorIdx = headers.indexOf("SETOR");  // coluna D = 3
-    const copIdx   = headers.indexOf("COP");    // coluna G = 6
-    // Coluna W (índice 22) não tem cabeçalho confiável → usar índice fixo
-    const uenNameIdx = 22;
-
-    if (setorIdx === -1 || copIdx === -1) {
-      return NextResponse.json(
-        { error: "Colunas SETOR ou COP não encontradas na planilha." },
-        { status: 422 },
-      );
-    }
-
     // ── Passo 4: agrupar placas por UEN ─────────────────────────────────────
+    // Coluna E (índice 4) = UEN 4 dígitos (valor da fórmula)
+    // Coluna H (índice 7) = PLACA / identificador do veículo
+    // Coluna W (índice 22) = "0106 - ES LEITURA CENTRO" → nome da UEN
     const byUen: Record<string, Set<string>> = {};
     const uenNames: Record<string, string>   = {};
 
     for (let i = 1; i < rawRows.length; i++) {
       const row = rawRows[i] as unknown[];
 
-      const setorRaw = String(row[setorIdx] ?? "").trim();
-      const uen      = setorRaw.substring(0, 4);
-
+      const uen = String(row[COL_UEN] ?? "").trim();
       if (!ALLOWED_UENS.has(uen)) continue;
 
-      const plate = String(row[copIdx] ?? "").trim().toUpperCase();
-      if (!PLATE_REGEX.test(plate)) continue;
+      const plate = String(row[COL_PLACA] ?? "").trim();
+      if (!plate) continue; // ignora células vazias
 
       if (!byUen[uen]) byUen[uen] = new Set();
-      byUen[uen].add(plate);
+      byUen[uen].add(plate.toUpperCase());
 
       // Nome da UEN a partir da coluna W (ex: "0106 - ES LEITURA CENTRO")
       if (!uenNames[uen]) {
-        const nameRaw = String(row[uenNameIdx] ?? "").trim();
+        const nameRaw = String(row[COL_UEN_NAME] ?? "").trim();
         if (nameRaw.includes(" - ")) {
           uenNames[uen] = nameRaw.split(" - ").slice(1).join(" - ");
         }
