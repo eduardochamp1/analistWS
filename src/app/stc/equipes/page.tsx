@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import {
   UserPlus, Plus, Trash2, Pencil, X, Loader2, AlertTriangle,
-  Wifi, WifiOff, Clock, Wrench, ChevronDown, ChevronUp, UserRound,
+  Wifi, WifiOff, Clock, Wrench, ChevronDown, ChevronUp, UserRound, Car,
 } from "lucide-react";
 import { teamColors } from "@/lib/teams-utils";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,8 @@ import { useToast } from "@/contexts/ToastContext";
 import { useTeams, Team } from "@/hooks/useTeams";
 import { useEmployees, Employee } from "@/hooks/useEmployees";
 import { getEmpAlerts } from "@/hooks/useEmployees";
+import type { VehiclePosition } from "@/app/api/tracking/route";
+import type { PlatesResponse } from "@/app/api/plates/route";
 
 const TeamsMap = dynamic(
   () => import("@/components/teams-map").then((mod) => mod.TeamsMap),
@@ -35,7 +37,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
 };
 
 // ── localStorage de membros (STC) ─────────────────────────────────────────
-const MEMBERS_KEY = "engelmig-stc-team-members";
+const MEMBERS_KEY  = "engelmig-stc-team-members";
+const VEHICLES_KEY = "engelmig-stc-team-vehicles";
 
 function loadTeamMembers(): Record<string, string[]> {
   try {
@@ -47,6 +50,22 @@ function loadTeamMembers(): Record<string, string[]> {
 
 function saveTeamMembers(data: Record<string, string[]>) {
   localStorage.setItem(MEMBERS_KEY, JSON.stringify(data));
+}
+
+function loadTeamVehicles(): Record<string, string> {
+  try {
+    const s = localStorage.getItem(VEHICLES_KEY);
+    if (s) return JSON.parse(s) as Record<string, string>;
+  } catch { /* ignore */ }
+  return {};
+}
+
+function saveTeamVehicles(data: Record<string, string>) {
+  localStorage.setItem(VEHICLES_KEY, JSON.stringify(data));
+}
+
+function vehicleMatchesPlate(vehicleName: string, plate: string): boolean {
+  return vehicleName.toUpperCase().includes(plate.toUpperCase());
 }
 
 export { MEMBERS_KEY, loadTeamMembers };
@@ -63,6 +82,7 @@ export default function STCEquipesPage() {
   const [newTeamName, setNewTeamName] = useState("");
   const [newTeamColor, setNewTeamColor] = useState(teamColors[0].value);
   const [newTeamMembers, setNewTeamMembers] = useState("3");
+  const [newTeamVehicle, setNewTeamVehicle] = useState("");
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -70,16 +90,53 @@ export default function STCEquipesPage() {
   const [statusMenuId, setStatusMenuId] = useState<string | null>(null);
 
   const [teamMembers, setTeamMembers] = useState<Record<string, string[]>>({});
+  const [teamVehicles, setTeamVehicles] = useState<Record<string, string>>({});
   const [expandedMembersId, setExpandedMembersId] = useState<string | null>(null);
   const [newMemberInputs, setNewMemberInputs] = useState<Record<string, string>>({});
   const [dropdownOpenId, setDropdownOpenId] = useState<string | null>(null);
   const dropdownRef = useRef<Record<string, HTMLDivElement | null>>({});
 
+  // ── Rastreamento UEN 0121 ─────────────────────────────────────────────
+  const [uen0121Plates, setUen0121Plates] = useState<string[]>([]);
+  const [vehiclePositions, setVehiclePositions] = useState<VehiclePosition[]>([]);
 
-
+  // Carregar membros e veículos do localStorage
   useEffect(() => {
     setTeamMembers(loadTeamMembers());
+    setTeamVehicles(loadTeamVehicles());
   }, []);
+
+  // Buscar placas da UEN 0121 na planilha
+  useEffect(() => {
+    fetch("/api/plates")
+      .then((r) => r.json())
+      .then((data: PlatesResponse) => {
+        setUen0121Plates(data.byUen?.["0121"] ?? []);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Buscar posições dos veículos da UEN 0121 (polling 30s)
+  const fetchVehiclePositions = useCallback(async () => {
+    if (uen0121Plates.length === 0) return;
+    try {
+      const r = await fetch("/api/tracking");
+      if (!r.ok) return;
+      const all: VehiclePosition[] = await r.json();
+      const filtered = all.filter((v) =>
+        uen0121Plates.some((plate) => vehicleMatchesPlate(v.name, plate))
+      );
+      setVehiclePositions(filtered);
+    } catch { /* ignore */ }
+  }, [uen0121Plates]);
+
+  useEffect(() => {
+    fetchVehiclePositions();
+    const interval = setInterval(fetchVehiclePositions, 30_000);
+    return () => clearInterval(interval);
+  }, [fetchVehiclePositions]);
+
+  // ─────────────────────────────────────────────────────────────────────
 
   const allKnownCollaborators = useMemo((): Employee[] => {
     const map = new Map<string, Employee>();
@@ -114,10 +171,31 @@ export default function STCEquipesPage() {
     });
   }, []);
 
+  const linkVehicle = useCallback((teamId: string, plate: string) => {
+    setTeamVehicles((prev) => {
+      const updated = plate ? { ...prev, [teamId]: plate } : (() => {
+        const copy = { ...prev };
+        delete copy[teamId];
+        return copy;
+      })();
+      saveTeamVehicles(updated);
+      return updated;
+    });
+  }, []);
+
+  const unlinkVehicle = useCallback((teamId: string) => {
+    setTeamVehicles((prev) => {
+      const updated = { ...prev };
+      delete updated[teamId];
+      saveTeamVehicles(updated);
+      return updated;
+    });
+  }, []);
+
   const addTeamAtLocation = useCallback(
     async (lat: number, lon: number) => {
       if (!newTeamName.trim()) { warning("Digite um nome para a equipe"); return; }
-      await createTeam({
+      const newTeam = await createTeam({
         name: newTeamName.trim(),
         lat,
         lon,
@@ -125,13 +203,22 @@ export default function STCEquipesPage() {
         members: parseInt(newTeamMembers) || 3,
         status: "AVAILABLE",
       });
+      // Vincular veículo se selecionado
+      if (newTeamVehicle && newTeam?.id) {
+        setTeamVehicles((prev) => {
+          const updated = { ...prev, [newTeam.id]: newTeamVehicle };
+          saveTeamVehicles(updated);
+          return updated;
+        });
+      }
       setNewTeamName("");
       setNewTeamMembers("3");
       setNewTeamColor(teamColors[0].value);
+      setNewTeamVehicle("");
       setClickMode(null);
       setShowAddForm(false);
     },
-    [newTeamName, newTeamColor, newTeamMembers, createTeam, warning]
+    [newTeamName, newTeamColor, newTeamMembers, newTeamVehicle, createTeam, warning]
   );
 
   const handleMapClick = useCallback(
@@ -160,6 +247,12 @@ export default function STCEquipesPage() {
       const updated = { ...prev };
       delete updated[id];
       saveTeamMembers(updated);
+      return updated;
+    });
+    setTeamVehicles((prev) => {
+      const updated = { ...prev };
+      delete updated[id];
+      saveTeamVehicles(updated);
       return updated;
     });
     await deleteTeam(id);
@@ -249,7 +342,7 @@ export default function STCEquipesPage() {
                   </div>
                 </div>
 
-                <div className="mb-3 flex items-center gap-2">
+                <div className="mb-2 flex items-center gap-2">
                   <span className="text-xs text-muted">Membros:</span>
                   <input
                     type="number"
@@ -259,6 +352,27 @@ export default function STCEquipesPage() {
                     max="50"
                     className="w-16 rounded-md border border-card-border bg-card-bg px-2 py-1 text-sm outline-none focus:border-primary"
                   />
+                </div>
+
+                {/* Seletor de veículo UEN 0121 */}
+                <div className="mb-3 flex items-center gap-2">
+                  <Car size={13} className="shrink-0 text-muted" />
+                  <span className="text-xs text-muted">Veículo:</span>
+                  <select
+                    value={newTeamVehicle}
+                    onChange={(e) => setNewTeamVehicle(e.target.value)}
+                    className="flex-1 rounded-md border border-card-border bg-card-bg px-2 py-1 text-xs outline-none focus:border-primary"
+                  >
+                    <option value="">— sem veículo —</option>
+                    {uen0121Plates.map((plate) => {
+                      const pos = vehiclePositions.find((v) => vehicleMatchesPlate(v.name, plate));
+                      return (
+                        <option key={plate} value={plate}>
+                          {plate}{pos ? (pos.ignition ? " 🟢" : " ⚫") : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
                 </div>
 
                 <p className="mb-1.5 text-xs font-medium text-muted">Posicionar por:</p>
@@ -288,6 +402,10 @@ export default function STCEquipesPage() {
                   const StatusIcon = cfg.icon;
                   const members = getMembersForTeam(team.id);
                   const membersExpanded = expandedMembersId === team.id;
+                  const linkedPlate = teamVehicles[team.id];
+                  const linkedVehicle = linkedPlate
+                    ? vehiclePositions.find((v) => vehicleMatchesPlate(v.name, linkedPlate))
+                    : undefined;
 
                   // ── Validação STC: equipe com Eletricista I precisa de ao menos 1 Eletricista II
                   const roleOf = (name: string) =>
@@ -331,13 +449,37 @@ export default function STCEquipesPage() {
                           ) : (
                             <p className="truncate text-sm font-medium text-foreground">{team.name}</p>
                           )}
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
                             <p className="text-xs text-muted">
                               {members.length} membro{members.length !== 1 ? "s" : ""}
                             </p>
                             {semEletricista2 && (
                               <span className="flex items-center gap-0.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-bold text-red-700" title="Sem Eletricista II na equipe">
                                 <AlertTriangle size={9} /> Sem Elet. II
+                              </span>
+                            )}
+                            {/* Chip de veículo vinculado */}
+                            {linkedPlate && (
+                              <span
+                                className={cn(
+                                  "flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-medium",
+                                  linkedVehicle
+                                    ? linkedVehicle.ignition
+                                      ? "bg-green-100 text-green-700"
+                                      : "bg-gray-100 text-gray-500"
+                                    : "bg-blue-100 text-blue-600"
+                                )}
+                                title={linkedVehicle ? (linkedVehicle.ignition ? "Veículo ligado" : "Veículo desligado") : "Veículo sem posição"}
+                              >
+                                <Car size={8} className="shrink-0" />
+                                {linkedPlate}
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); unlinkVehicle(team.id); }}
+                                  className="ml-0.5 hover:text-red-500"
+                                  title="Desvincular veículo"
+                                >
+                                  <X size={8} />
+                                </button>
                               </span>
                             )}
                           </div>
@@ -380,6 +522,26 @@ export default function STCEquipesPage() {
                               </div>
                             </>
                           )}
+                        </div>
+
+                        {/* Botão veículo (vincular/alterar) */}
+                        <div className="relative">
+                          <select
+                            value={teamVehicles[team.id] ?? ""}
+                            onChange={(e) => linkVehicle(team.id, e.target.value)}
+                            className="shrink-0 cursor-pointer rounded p-1 text-[10px] text-muted outline-none hover:text-primary focus:text-primary"
+                            title="Vincular veículo"
+                          >
+                            <option value="">🚗</option>
+                            {uen0121Plates.map((plate) => {
+                              const pos = vehiclePositions.find((v) => vehicleMatchesPlate(v.name, plate));
+                              return (
+                                <option key={plate} value={plate}>
+                                  {plate}{pos ? (pos.ignition ? " 🟢" : " ⚫") : ""}
+                                </option>
+                              );
+                            })}
+                          </select>
                         </div>
 
                         {/* Botão membros */}
@@ -632,6 +794,27 @@ export default function STCEquipesPage() {
               })}
             </div>
           </div>
+
+          {/* Info veículos UEN 0121 */}
+          {vehiclePositions.length > 0 && (
+            <div className="rounded-xl border border-card-border bg-card-bg p-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                Veículos UEN 0121 ({vehiclePositions.length})
+              </p>
+              <div className="space-y-1">
+                <div className="flex gap-3 text-[10px] text-muted">
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-green-500 inline-block" />
+                    Ligados: {vehiclePositions.filter((v) => v.ignition).length}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-gray-400 inline-block" />
+                    Desligados: {vehiclePositions.filter((v) => !v.ignition).length}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Mapa */}
@@ -647,6 +830,8 @@ export default function STCEquipesPage() {
             highlightedTeamIds={new Set()}
             onMapClick={handleMapClick}
             clickMode={clickMode}
+            vehiclePositions={vehiclePositions}
+            teamVehicles={teamVehicles}
           />
         </div>
       </div>
