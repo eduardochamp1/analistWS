@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import {
   UserPlus, Plus, Trash2, Pencil, X, Loader2, AlertTriangle,
-  UserRound, Car, Filter, RefreshCw,
+  UserRound, Car, Filter, RefreshCw, Maximize2, Minimize2,
 } from "lucide-react";
 import { teamColors } from "@/lib/teams-utils";
 import { cn } from "@/lib/utils";
@@ -104,6 +104,7 @@ export default function STCEquipesPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated]   = useState<Date | null>(null);
   const [countdown, setCountdown]       = useState(30);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Veículos filtrados para o mapa
   const filteredVehiclePositions = useMemo(() => {
@@ -168,6 +169,21 @@ export default function STCEquipesPage() {
     }, 1_000);
     return () => clearInterval(tick);
   }, [lastUpdated]);
+
+  // Fechar fullscreen com Escape e re-calcular tamanho do mapa
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isFullscreen) setIsFullscreen(false);
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [isFullscreen]);
+
+  useEffect(() => {
+    // Leaflet precisa saber quando o container mudou de tamanho
+    const timer = setTimeout(() => window.dispatchEvent(new Event("resize")), 150);
+    return () => clearTimeout(timer);
+  }, [isFullscreen]);
 
   // ─────────────────────────────────────────────────────────────────────
 
@@ -831,9 +847,14 @@ export default function STCEquipesPage() {
           )}
         </div>
 
-        {/* Mapa */}
-        <div className="flex flex-col gap-2">
-          {/* Filtros suspensos acima do mapa */}
+        {/* ── Painel do Mapa (suporta tela cheia) ────────────────────────── */}
+        <div
+          className={cn(
+            "flex flex-col gap-2",
+            isFullscreen && "fixed inset-0 z-[9999] bg-background p-3"
+          )}
+        >
+          {/* Barra de filtros + controles */}
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-card-border bg-card-bg px-3 py-2">
             <Filter size={13} className="shrink-0 text-muted" />
             <span className="text-xs font-medium text-muted">Filtrar:</span>
@@ -869,7 +890,6 @@ export default function STCEquipesPage() {
               </button>
             )}
 
-            {/* Separador */}
             <span className="ml-auto flex items-center gap-2">
               {/* Contador regressivo */}
               {lastUpdated && (
@@ -891,7 +911,7 @@ export default function STCEquipesPage() {
                 </span>
               )}
 
-              {/* Botão refresh manual */}
+              {/* Refresh manual */}
               <button
                 onClick={fetchVehiclePositions}
                 disabled={isRefreshing || uen0121Plates.length === 0}
@@ -905,11 +925,26 @@ export default function STCEquipesPage() {
               <span className="text-[10px] text-muted">
                 {filteredVehiclePositions.length} veículo{filteredVehiclePositions.length !== 1 ? "s" : ""}
               </span>
+
+              {/* Botão tela cheia */}
+              <button
+                onClick={() => setIsFullscreen(!isFullscreen)}
+                className="flex items-center gap-1 rounded-md border border-card-border bg-background px-2 py-1 text-[11px] text-muted transition-colors hover:border-primary hover:text-primary"
+                title={isFullscreen ? "Sair da tela cheia (Esc)" : "Expandir para tela cheia"}
+              >
+                {isFullscreen
+                  ? <><Minimize2 size={12} /> Sair</>
+                  : <><Maximize2 size={12} /> Tela cheia</>
+                }
+              </button>
             </span>
           </div>
 
-          {/* Mapa */}
-          <div className="relative overflow-hidden rounded-xl border border-card-border" style={{ minHeight: "560px", flex: 1 }}>
+          {/* Mapa com legenda flutuante */}
+          <div
+            className="relative overflow-hidden rounded-xl border border-card-border"
+            style={{ height: isFullscreen ? "calc(100vh - 68px)" : "560px" }}
+          >
             <TeamsMap
               teams={[]}
               emergencyData={[]}
@@ -919,6 +954,69 @@ export default function STCEquipesPage() {
               vehiclePositions={filteredVehiclePositions}
               teamVehicles={teamVehicles}
             />
+
+            {/* Legenda flutuante no canto inferior esquerdo */}
+            <div className="absolute bottom-6 left-3 z-[1000] min-w-[160px] rounded-xl border border-white/20 bg-white/90 p-3 shadow-lg backdrop-blur-sm dark:bg-gray-900/90">
+              <p className="mb-2 text-[9px] font-bold uppercase tracking-widest text-gray-500">
+                Legenda
+              </p>
+              <div className="space-y-1.5">
+                {/* Status ignição */}
+                <div className="flex items-center gap-2">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-500">
+                    <Car size={10} className="text-white" />
+                  </span>
+                  <span className="text-[10px] text-gray-700 dark:text-gray-300">Ligado / Em movimento</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-400">
+                    <Car size={10} className="text-white" />
+                  </span>
+                  <span className="text-[10px] text-gray-700 dark:text-gray-300">Parado / Desligado</span>
+                </div>
+
+                {/* Equipes com veículos vinculados */}
+                {teams.filter((t) => teamVehicles[t.id]).length > 0 && (
+                  <>
+                    <div className="my-1.5 border-t border-gray-200 dark:border-gray-700" />
+                    <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">
+                      Equipes
+                    </p>
+                    {teams
+                      .filter((t) => teamVehicles[t.id])
+                      .map((team) => {
+                        const plate = teamVehicles[team.id];
+                        const vPos = filteredVehiclePositions.find((v) =>
+                          vehicleMatchesPlate(v.name, plate)
+                        );
+                        return (
+                          <div key={team.id} className="flex items-center gap-2">
+                            <span
+                              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full ring-2 ring-white dark:ring-gray-900"
+                              style={{ backgroundColor: team.color }}
+                            >
+                              <Car size={9} className="text-white" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="truncate text-[10px] font-medium text-gray-700 dark:text-gray-300">
+                                {team.name}
+                              </p>
+                              {vPos && (
+                                <p className={cn(
+                                  "text-[9px]",
+                                  vPos.ignition ? "text-green-600" : "text-gray-400"
+                                )}>
+                                  {plate} · {vPos.ignition ? "ligado" : "parado"}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
